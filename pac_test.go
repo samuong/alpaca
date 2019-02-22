@@ -1,60 +1,54 @@
 package main
 
 import (
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
 	"net/url"
 	"strings"
 	"testing"
 )
 
-func TestDirect(t *testing.T) {
-	src := `function FindProxyForURL(url, host) { return "DIRECT"; }`
-	pf, err := NewProxyFinder(strings.NewReader(src))
+func newProxyFinder(t *testing.T, expr string) *ProxyFinder {
+	pf, err := NewProxyFinder(strings.NewReader(fmt.Sprintf(
+		"function FindProxyForURL(url, host) { return %s }", expr)))
 	require.Nil(t, err)
-	u, err := url.Parse("https://www.anz.com.au/personal/")
+	return pf
+}
+
+func check(t *testing.T, pf *ProxyFinder, addr, expected string) {
+	u, err := url.Parse(addr)
 	require.Nil(t, err)
 	proxy, err := pf.FindProxyForURL(u)
 	require.Nil(t, err)
-	assert.Equal(t, "DIRECT", proxy)
+	assert.Equal(t, expected, proxy)
 }
 
-type IsPlainHostNameSuite struct {
-	suite.Suite
-	pf *ProxyFinder
+func TestDirect(t *testing.T) {
+	pf := newProxyFinder(t, `"DIRECT"`)
+	check(t, pf, "https://anz.com", "DIRECT")
 }
 
-func (suite *IsPlainHostNameSuite) SetupTest() {
-	src := `
-		function FindProxyForURL(url, host) {
-			if (isPlainHostName(host))
-				return "isPlainHostName is true";
-			else
-				return "isPlainHostName is false";
-		}
-	`
-	var err error
-	suite.pf, err = NewProxyFinder(strings.NewReader(src))
-	suite.Require().Nil(err)
+func TestIsPlainHostName(t *testing.T) {
+	pf := newProxyFinder(t, `isPlainHostName(host) ? "y" : "n"`)
+	check(t, pf, "https://www", "y")
+	check(t, pf, "https://anz.com", "n")
 }
 
-func (suite *IsPlainHostNameSuite) TestIsPlainHostName() {
-	u, err := url.Parse("https://www")
-	suite.Require().Nil(err)
-	proxy, err := suite.pf.FindProxyForURL(u)
-	suite.Require().Nil(err)
-	suite.Assert().Equal("isPlainHostName is true", proxy)
+func TestDnsDomainIs(t *testing.T) {
+	pf := newProxyFinder(t, `dnsDomainIs(host, ".anz.com") ? "y" : "n"`)
+	check(t, pf, "https://www.anz.com", "y")
+	check(t, pf, "https://www", "n")
 }
 
-func (suite *IsPlainHostNameSuite) TestIsNotPlainHostName() {
-	u, err := url.Parse("https://www.mozilla.org")
-	suite.Require().Nil(err)
-	proxy, err := suite.pf.FindProxyForURL(u)
-	suite.Require().Nil(err)
-	suite.Assert().Equal("isPlainHostName is false", proxy)
+func TestDnsDomainIsAnySuffix(t *testing.T) {
+	// See https://bugs.chromium.org/p/chromium/issues/detail?id=299649.
+	pf := newProxyFinder(t, `dnsDomainIs(host, "anz.com") ? "y" : "n"`)
+	check(t, pf, "https://notanz.com", "y")
 }
 
-func TestIsPlainHostNameSuite(t *testing.T) {
-	suite.Run(t, new(IsPlainHostNameSuite))
+func TestShExpMatch(t *testing.T) {
+	pf := newProxyFinder(t, `shExpMatch(url, "*/b/*") ? "y" : "n"`)
+	check(t, pf, "http://anz.com/a/b/c.html", "y")
+	check(t, pf, "http://anz.com/d/e/f.html", "n")
 }

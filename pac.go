@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"github.com/gobwas/glob"
 	"github.com/robertkrimen/otto"
 	"io"
 	"net/url"
@@ -24,14 +25,17 @@ func NewProxyFinder(r io.Reader) (*ProxyFinder, error) {
 		err = vm.Set(name, handler)
 	}
 	// TODO: These three functions are the only ones that are used by the
-	// ANZ PAC file. Implement these first, then the rest later.
+	// ANZ PAC file. Implement the rest later.
 	set("isPlainHostName", isPlainHostName)
-	//set("dnsDomainIs", dnsDomainIs)
-	//set("shExpMatch", shExpMatch)
+	set("dnsDomainIs", dnsDomainIs)
+	set("shExpMatch", shExpMatch)
 	if err != nil {
 		return nil, err
 	}
-	vm.Run(r)
+	_, err = vm.Run(r)
+	if err != nil {
+		return nil, err
+	}
 	return &ProxyFinder{vm}, nil
 }
 
@@ -46,15 +50,32 @@ func (pf *ProxyFinder) FindProxyForURL(u *url.URL) (string, error) {
 	return val.String(), nil
 }
 
+func toValue(unwrapped interface{}) otto.Value {
+	wrapped, err := otto.ToValue(unwrapped)
+	if err != nil {
+		return otto.UndefinedValue()
+	} else {
+		return wrapped
+	}
+}
+
 func isPlainHostName(call otto.FunctionCall) otto.Value {
-	arg := call.Argument(0)
-	if arg.IsUndefined() {
+	host := call.Argument(0).String()
+	return toValue(!strings.ContainsRune(host, '.'))
+}
+
+func dnsDomainIs(call otto.FunctionCall) otto.Value {
+	host := call.Argument(0).String()
+	domain := call.Argument(1).String()
+	return toValue(strings.HasSuffix(host, domain))
+}
+
+func shExpMatch(call otto.FunctionCall) otto.Value {
+	str := call.Argument(0).String()
+	shexp := call.Argument(1).String()
+	g, err := glob.Compile(shexp)
+	if err != nil {
 		return otto.UndefinedValue()
 	}
-	host := arg.String()
-	if !strings.ContainsRune(host, '.') {
-		return otto.TrueValue()
-	} else {
-		return otto.FalseValue()
-	}
+	return toValue(g.Match(str))
 }
