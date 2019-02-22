@@ -11,11 +11,11 @@ import (
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file
 
-type ProxyFinder struct {
+type PacRunner struct {
 	vm *otto.Otto
 }
 
-func NewProxyFinder(r io.Reader) (*ProxyFinder, error) {
+func NewPacRunner(r io.Reader) (*PacRunner, error) {
 	vm := otto.New()
 	var err error
 	set := func(name string, handler func(otto.FunctionCall) otto.Value) {
@@ -36,12 +36,12 @@ func NewProxyFinder(r io.Reader) (*ProxyFinder, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ProxyFinder{vm}, nil
+	return &PacRunner{vm}, nil
 }
 
-func (pf *ProxyFinder) FindProxyForURL(u *url.URL) (string, error) {
+func (pr *PacRunner) FindProxyForURL(u *url.URL) (string, error) {
 	// TODO: Strip the path and query components of https:// URLs.
-	val, err := pf.vm.Call("FindProxyForURL", nil, u.String(), u.Hostname())
+	val, err := pr.vm.Call("FindProxyForURL", nil, u.String(), u.Hostname())
 	if err != nil {
 		return "", err
 	} else if !val.IsString() {
