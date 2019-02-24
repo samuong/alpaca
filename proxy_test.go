@@ -19,7 +19,7 @@ import (
 // server. But doing everything inside the test process means that we'll
 // collect coverage data. It's also a bit simpler to implement.
 
-func serverHandler(w http.ResponseWriter, r *http.Request) {
+func serverHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Hello, client")
 }
@@ -35,9 +35,11 @@ func testClient(t *testing.T, client *http.Client, serverUrl string) {
 }
 
 func TestProxyDirect(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(serverHandler))
+	server := httptest.NewServer(http.HandlerFunc(serverHandlerFunc))
 	defer server.Close()
-	proxy := httptest.NewServer(http.HandlerFunc(proxyHandler))
+	ph, err := NewProxyHandler()
+	require.Nil(t, err)
+	proxy := httptest.NewServer(ph)
 	defer proxy.Close()
 	proxyUrl, err := url.Parse(proxy.URL)
 	require.Nil(t, err)
@@ -47,9 +49,11 @@ func TestProxyDirect(t *testing.T) {
 }
 
 func TestProxyDirectTls(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(serverHandler))
+	server := httptest.NewTLSServer(http.HandlerFunc(serverHandlerFunc))
 	defer server.Close()
-	proxy := httptest.NewServer(http.HandlerFunc(proxyHandler))
+	ph, err := NewProxyHandler()
+	require.Nil(t, err)
+	proxy := httptest.NewServer(ph)
 	defer proxy.Close()
 	proxyUrl, err := url.Parse(proxy.URL)
 	require.Nil(t, err)

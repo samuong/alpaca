@@ -6,10 +6,25 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 )
 
-func proxyHandler(w http.ResponseWriter, r *http.Request) {
+type proxyHandler struct {
+	pacRunner *PacRunner
+}
+
+func NewProxyHandler() (http.Handler, error) {
+	// TODO: download the PAC file instead of hard-coding it
+	pr, err := NewPacRunner(strings.NewReader(
+		`function FindProxyForURL(url, host) { return "DIRECT" }`))
+	if err != nil {
+		return nil, err
+	}
+	return proxyHandler{pr}, nil
+}
+
+func (ph proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
 		connect(w, r)
 	} else {
