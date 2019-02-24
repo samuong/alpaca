@@ -14,10 +14,22 @@ type proxyHandler struct {
 	pacRunner *PacRunner
 }
 
-func NewProxyHandler() (http.Handler, error) {
-	// TODO: download the PAC file instead of hard-coding it
-	pr, err := NewPacRunner(strings.NewReader(
+func NewProxyHandler(pacUrl string) (http.Handler, error) {
+	resp, err := http.DefaultClient.Get(pacUrl)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return newProxyHandler(resp.Body)
+}
+
+func NewDirectProxyHandler() (http.Handler, error) {
+	return newProxyHandler(strings.NewReader(
 		`function FindProxyForURL(url, host) { return "DIRECT" }`))
+}
+
+func newProxyHandler(r io.Reader) (http.Handler, error) {
+	pr, err := NewPacRunner(r)
 	if err != nil {
 		return nil, err
 	}

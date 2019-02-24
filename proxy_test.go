@@ -37,7 +37,7 @@ func testClient(t *testing.T, client *http.Client, serverUrl string) {
 func TestProxyDirect(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(serverHandlerFunc))
 	defer server.Close()
-	ph, err := NewProxyHandler()
+	ph, err := NewDirectProxyHandler()
 	require.Nil(t, err)
 	proxy := httptest.NewServer(ph)
 	defer proxy.Close()
@@ -51,7 +51,7 @@ func TestProxyDirect(t *testing.T) {
 func TestProxyDirectTls(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(serverHandlerFunc))
 	defer server.Close()
-	ph, err := NewProxyHandler()
+	ph, err := NewDirectProxyHandler()
 	require.Nil(t, err)
 	proxy := httptest.NewServer(ph)
 	defer proxy.Close()
