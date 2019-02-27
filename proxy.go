@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -15,7 +16,8 @@ type proxyHandler struct {
 }
 
 func NewProxyHandler(pacUrl string) (http.Handler, error) {
-	resp, err := http.DefaultClient.Get(pacUrl)
+	client := &http.Client{Transport: &http.Transport{Proxy: nil}}
+	resp, err := client.Get(pacUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -23,9 +25,9 @@ func NewProxyHandler(pacUrl string) (http.Handler, error) {
 	return newProxyHandler(resp.Body)
 }
 
-func NewDirectProxyHandler() (http.Handler, error) {
-	return newProxyHandler(strings.NewReader(
-		`function FindProxyForURL(url, host) { return "DIRECT" }`))
+func NewHardCodedProxyHandler(proxy string) (http.Handler, error) {
+	return newProxyHandler(strings.NewReader(fmt.Sprintf(
+		`function FindProxyForURL(url, host) { return "%s" }`, proxy)))
 }
 
 func newProxyHandler(r io.Reader) (http.Handler, error) {
@@ -37,11 +39,26 @@ func newProxyHandler(r io.Reader) (http.Handler, error) {
 }
 
 func (ph proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodConnect {
-		connect(w, r)
-	} else {
-		direct(w, r)
+	log.Printf("servehttp %s %s\n", r.Method, r.URL.String())
+	proxy, err := ph.pacRunner.FindProxyForURL(r.URL)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
+	if r.Method == http.MethodConnect {
+		if proxy == "DIRECT" {
+			connect(w, r)
+		} else {
+			tunnel(w, r, proxy)
+		}
+	} else {
+		direct(w, r, proxy)
+	}
+}
+
+func tunnel(w http.ResponseWriter, r *http.Request, proxy string) {
+	panic("not yet implemented")
 }
 
 func connect(w http.ResponseWriter, r *http.Request) {
@@ -87,8 +104,17 @@ func transfer(wg *sync.WaitGroup, dst, src net.Conn) {
 	}
 }
 
-func direct(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.DefaultTransport.RoundTrip(r)
+func direct(w http.ResponseWriter, r *http.Request, proxy string) {
+	log.Printf("direct: r.url = %s\n", r.URL.String())
+	// TODO: reuse the Transport, don't build a new one each time
+	proxyFunc := func(r *http.Request) (*url.URL, error) {
+		if proxy == "DIRECT" {
+			return nil, nil
+		}
+		return url.Parse(proxy)
+	}
+	t := &http.Transport{Proxy: proxyFunc}
+	resp, err := t.RoundTrip(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

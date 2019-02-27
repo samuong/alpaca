@@ -37,7 +37,7 @@ func testClient(t *testing.T, client *http.Client, serverUrl string) {
 func TestProxyDirect(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(serverHandlerFunc))
 	defer server.Close()
-	ph, err := NewDirectProxyHandler()
+	ph, err := NewHardCodedProxyHandler("DIRECT")
 	require.Nil(t, err)
 	proxy := httptest.NewServer(ph)
 	defer proxy.Close()
@@ -51,7 +51,7 @@ func TestProxyDirect(t *testing.T) {
 func TestProxyDirectTls(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(serverHandlerFunc))
 	defer server.Close()
-	ph, err := NewDirectProxyHandler()
+	ph, err := NewHardCodedProxyHandler("DIRECT")
 	require.Nil(t, err)
 	proxy := httptest.NewServer(ph)
 	defer proxy.Close()
@@ -61,6 +61,57 @@ func TestProxyDirectTls(t *testing.T) {
 	cp.AddCert(server.Certificate())
 	client := &http.Client{Transport: &http.Transport{
 		Proxy:           http.ProxyURL(proxyUrl),
+		TLSClientConfig: &tls.Config{RootCAs: cp}}}
+	testClient(t, client, server.URL)
+}
+
+func TestTwoProxies(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(serverHandlerFunc))
+	defer server.Close()
+	t.Logf("server.URL = %s\n", server.URL)
+
+	ph1, err := NewHardCodedProxyHandler("DIRECT")
+	require.Nil(t, err)
+	proxy1 := httptest.NewServer(ph1)
+	defer proxy1.Close()
+	t.Logf("proxy1.URL = %s\n", proxy1.URL)
+
+	ph2, err := NewHardCodedProxyHandler(proxy1.URL)
+	require.Nil(t, err)
+	proxy2 := httptest.NewServer(ph2)
+	defer proxy2.Close()
+	t.Logf("proxy2.URL = %s\n", proxy2.URL)
+
+	proxy2Url, err := url.Parse(proxy2.URL)
+	require.Nil(t, err)
+	client := &http.Client{
+		Transport: &http.Transport{Proxy: http.ProxyURL(proxy2Url)}}
+	testClient(t, client, server.URL)
+}
+
+func TestTwoProxiesTls(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(serverHandlerFunc))
+	defer server.Close()
+	t.Logf("server.URL = %s\n", server.URL)
+
+	ph1, err := NewHardCodedProxyHandler("DIRECT")
+	require.Nil(t, err)
+	proxy1 := httptest.NewServer(ph1)
+	defer proxy1.Close()
+	t.Logf("proxy1.URL = %s\n", proxy1.URL)
+
+	ph2, err := NewHardCodedProxyHandler(proxy1.URL)
+	require.Nil(t, err)
+	proxy2 := httptest.NewServer(ph2)
+	defer proxy2.Close()
+	t.Logf("proxy2.URL = %s\n", proxy2.URL)
+
+	proxy2Url, err := url.Parse(proxy2.URL)
+	require.Nil(t, err)
+	cp := x509.NewCertPool()
+	cp.AddCert(server.Certificate())
+	client := &http.Client{Transport: &http.Transport{
+		Proxy:           http.ProxyURL(proxy2Url),
 		TLSClientConfig: &tls.Config{RootCAs: cp}}}
 	testClient(t, client, server.URL)
 }

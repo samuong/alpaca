@@ -15,7 +15,7 @@ func main() {
 	var proxyHandler http.Handler
 	var err error
 	if *pacUrlPtr == "" {
-		proxyHandler, err = NewDirectProxyHandler()
+		proxyHandler, err = NewHardCodedProxyHandler("DIRECT")
 	} else {
 		log.Printf("Downloading proxy auto-config: %s\n", *pacUrlPtr)
 		proxyHandler, err = NewProxyHandler(*pacUrlPtr)
