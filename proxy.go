@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 )
@@ -39,7 +41,8 @@ func newProxyHandler(r io.Reader) (http.Handler, error) {
 }
 
 func (ph proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("servehttp %s %s\n", r.Method, r.URL.String())
+	fmt.Println("dumping request:")
+	r.Write(os.Stdout)
 	proxy, err := ph.pacRunner.FindProxyForURL(r.URL)
 	if err != nil {
 		log.Println(err)
@@ -58,7 +61,57 @@ func (ph proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func tunnel(w http.ResponseWriter, r *http.Request, proxy string) {
-	panic("not yet implemented")
+	// can't hijack the connection to server, so can't just replay request
+	// need to dial and manually write connect header and read response
+	proxyUrl, err := url.Parse(proxy)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	proxyConn, err := net.Dial("tcp", proxyUrl.Host)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	r.Write(proxyConn)
+	pr := bufio.NewReader(proxyConn)
+	res, err := http.ReadResponse(pr, r)
+	// should we close the response body, or leave it so that the
+	// connection stays open?
+	// ...also, might need to check for any buffered data in the reader,
+	// and write it to the connection before moving on
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h, ok := w.(http.Hijacker)
+	if !ok {
+		msg := fmt.Sprintf("Can't hijack connection to %v", r.Host)
+		http.Error(w, msg, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(res.StatusCode)
+	if res.StatusCode != http.StatusOK {
+		return
+	}
+	client, _, err := h.Hijack()
+	if err != nil {
+		// The response status has already been sent, so if hijacking
+		// fails, we can't return an error status to the client.
+		// Instead, log the error and finish up.
+		log.Printf("Error hijacking connection to %v", r.Host)
+		proxyConn.Close()
+		return
+	}
+	go func() {
+		defer proxyConn.Close()
+		defer client.Close()
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go transfer(&wg, proxyConn, client)
+		go transfer(&wg, client, proxyConn)
+		wg.Wait()
+	}()
 }
 
 func connect(w http.ResponseWriter, r *http.Request) {

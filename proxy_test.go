@@ -51,10 +51,12 @@ func TestProxyDirect(t *testing.T) {
 func TestProxyDirectTls(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(serverHandlerFunc))
 	defer server.Close()
+	t.Logf("server url = %s\n", server.URL)
 	ph, err := NewHardCodedProxyHandler("DIRECT")
 	require.Nil(t, err)
 	proxy := httptest.NewServer(ph)
 	defer proxy.Close()
+	t.Logf("proxy url = %s\n", proxy.URL)
 	proxyUrl, err := url.Parse(proxy.URL)
 	require.Nil(t, err)
 	cp := x509.NewCertPool()
