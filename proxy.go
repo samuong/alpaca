@@ -8,59 +8,74 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 )
 
-type proxyHandler struct {
-	pacRunner *PacRunner
+type ProxyHandler struct {
+	pf proxyFinder
+	t  *http.Transport
 }
 
-func NewProxyHandler(pacUrl string) (http.Handler, error) {
-	client := &http.Client{Transport: &http.Transport{Proxy: nil}}
-	resp, err := client.Get(pacUrl)
-	if err != nil {
+type proxyFinder interface {
+	FindProxyForURL(u *url.URL) (string, error)
+}
+
+type alwaysDirect struct{}
+
+func (d alwaysDirect) FindProxyForURL(u *url.URL) (string, error) {
+	return "DIRECT", nil
+}
+
+func NewProxyHandler(pf proxyFinder) ProxyHandler {
+	proxyFunc := func(r *http.Request) (*url.URL, error) {
+		s, err := pf.FindProxyForURL(r.URL)
+		if err != nil {
+			return nil, err
+		}
+		ss := strings.Split(s, ";")
+		if len(ss) > 1 {
+			msg := "warning: ignoring all but first proxy in '%s'"
+			log.Printf(msg, s)
+		}
+		trimmed := strings.TrimSpace(ss[0])
+		if trimmed == "DIRECT" {
+			return nil, nil
+		}
+		var rawurl string
+		n, err := fmt.Sscanf(trimmed, "PROXY %s", &rawurl)
+		if err == nil && n == 1 {
+			return url.Parse(rawurl)
+		}
+		n, err = fmt.Sscanf(trimmed, "SOCKS %s", &rawurl)
+		if err == nil && n == 1 {
+			msg := "warning: ignoring socks proxy '%s'"
+			log.Printf(msg, rawurl)
+			return nil, nil
+		}
+		log.Printf("warning: couldn't parse pac response '%s'", s)
 		return nil, err
 	}
-	defer resp.Body.Close()
-	return newProxyHandler(resp.Body)
+	return ProxyHandler{pf, &http.Transport{Proxy: proxyFunc}}
 }
 
-func NewHardCodedProxyHandler(proxy string) (http.Handler, error) {
-	return newProxyHandler(strings.NewReader(fmt.Sprintf(
-		`function FindProxyForURL(url, host) { return "%s" }`, proxy)))
-}
-
-func newProxyHandler(r io.Reader) (http.Handler, error) {
-	pr, err := NewPacRunner(r)
-	if err != nil {
-		return nil, err
-	}
-	return proxyHandler{pr}, nil
-}
-
-func (ph proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("dumping request:")
-	r.Write(os.Stdout)
-	proxy, err := ph.pacRunner.FindProxyForURL(r.URL)
-	if err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
-		if proxy == "DIRECT" {
-			connect(w, r)
+		u, err := ph.t.Proxy(r)
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		} else if u == nil {
+			directConnect(w, r)
 		} else {
-			tunnel(w, r, proxy)
+			proxyConnect(w, r, u.String())
 		}
 	} else {
-		direct(w, r, proxy)
+		ph.proxyRequest(w, r)
 	}
 }
 
-func tunnel(w http.ResponseWriter, r *http.Request, proxy string) {
+func proxyConnect(w http.ResponseWriter, r *http.Request, proxy string) {
 	// can't hijack the connection to server, so can't just replay request
 	// need to dial and manually write connect header and read response
 	proxyUrl, err := url.Parse(proxy)
@@ -114,7 +129,7 @@ func tunnel(w http.ResponseWriter, r *http.Request, proxy string) {
 	}()
 }
 
-func connect(w http.ResponseWriter, r *http.Request) {
+func directConnect(w http.ResponseWriter, r *http.Request) {
 	// TODO: should probably put a timeout on this
 	server, err := net.Dial("tcp", r.Host)
 	if err != nil {
@@ -157,17 +172,8 @@ func transfer(wg *sync.WaitGroup, dst, src net.Conn) {
 	}
 }
 
-func direct(w http.ResponseWriter, r *http.Request, proxy string) {
-	log.Printf("direct: r.url = %s\n", r.URL.String())
-	// TODO: reuse the Transport, don't build a new one each time
-	proxyFunc := func(r *http.Request) (*url.URL, error) {
-		if proxy == "DIRECT" {
-			return nil, nil
-		}
-		return url.Parse(proxy)
-	}
-	t := &http.Transport{Proxy: proxyFunc}
-	resp, err := t.RoundTrip(r)
+func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request) {
+	resp, err := ph.t.RoundTrip(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
