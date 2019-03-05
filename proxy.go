@@ -61,88 +61,33 @@ func NewProxyHandler(pf proxyFinder) ProxyHandler {
 
 func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
-		u, err := ph.t.Proxy(r)
-		if err != nil {
-			log.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
-		} else if u == nil {
-			directConnect(w, r)
-		} else {
-			proxyConnect(w, r, u.String())
-		}
+		handleConnect(w, r, ph.t)
 	} else {
-		ph.proxyRequest(w, r)
+		proxyRequest(w, r, ph.t)
 	}
 }
 
-func proxyConnect(w http.ResponseWriter, r *http.Request, proxy string) {
-	// can't hijack the connection to server, so can't just replay request
-	// need to dial and manually write connect header and read response
-	proxyUrl, err := url.Parse(proxy)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	proxyConn, err := net.Dial("tcp", proxyUrl.Host)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	r.Write(proxyConn)
-	pr := bufio.NewReader(proxyConn)
-	res, err := http.ReadResponse(pr, r)
-	// should we close the response body, or leave it so that the
-	// connection stays open?
-	// ...also, might need to check for any buffered data in the reader,
-	// and write it to the connection before moving on
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+func handleConnect(w http.ResponseWriter, r *http.Request, t *http.Transport) {
 	h, ok := w.(http.Hijacker)
 	if !ok {
 		msg := fmt.Sprintf("Can't hijack connection to %v", r.Host)
 		http.Error(w, msg, http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(res.StatusCode)
-	if res.StatusCode != http.StatusOK {
-		return
-	}
-	client, _, err := h.Hijack()
-	if err != nil {
-		// The response status has already been sent, so if hijacking
-		// fails, we can't return an error status to the client.
-		// Instead, log the error and finish up.
-		log.Printf("Error hijacking connection to %v", r.Host)
-		proxyConn.Close()
-		return
-	}
-	go func() {
-		defer proxyConn.Close()
-		defer client.Close()
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go transfer(&wg, proxyConn, client)
-		go transfer(&wg, client, proxyConn)
-		wg.Wait()
-	}()
-}
-
-func directConnect(w http.ResponseWriter, r *http.Request) {
-	// TODO: should probably put a timeout on this
-	server, err := net.Dial("tcp", r.Host)
+	u, err := t.Proxy(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	h, ok := w.(http.Hijacker)
-	if !ok {
-		msg := fmt.Sprintf("Can't hijack connection to %v", r.Host)
-		http.Error(w, msg, http.StatusInternalServerError)
+	var server net.Conn
+	if u == nil {
+		server = connectToServer(w, r, t)
+	} else {
+		server = connectViaProxy(w, r, u.Host)
+	}
+	if server == nil {
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 	client, _, err := h.Hijack()
 	if err != nil {
 		// The response status has already been sent, so if hijacking
@@ -163,6 +108,45 @@ func directConnect(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
+func connectViaProxy(w http.ResponseWriter, r *http.Request, proxy string) net.Conn {
+	// can't hijack the connection to server, so can't just replay request via a Transport
+	// need to dial and manually write connect header and read response
+	conn, err := net.Dial("tcp", proxy)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil
+	}
+	r.Write(conn)
+	pr := bufio.NewReader(conn)
+	res, err := http.ReadResponse(pr, r)
+	// should we close the response body, or leave it so that the
+	// connection stays open?
+	// ...also, might need to check for any buffered data in the reader,
+	// and write it to the connection before moving on
+	if err != nil {
+		conn.Close()
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil
+	}
+	w.WriteHeader(res.StatusCode)
+	if res.StatusCode != http.StatusOK {
+		conn.Close()
+		return nil
+	}
+	return conn
+}
+
+func connectToServer(w http.ResponseWriter, r *http.Request, t *http.Transport) net.Conn {
+	// TODO: should probably put a timeout on this
+	conn, err := net.Dial("tcp", r.Host)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil
+	}
+	w.WriteHeader(http.StatusOK)
+	return conn
+}
+
 func transfer(wg *sync.WaitGroup, dst, src net.Conn) {
 	defer wg.Done()
 	_, err := io.Copy(dst, src)
@@ -172,8 +156,8 @@ func transfer(wg *sync.WaitGroup, dst, src net.Conn) {
 	}
 }
 
-func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, r *http.Request) {
-	resp, err := ph.t.RoundTrip(r)
+func proxyRequest(w http.ResponseWriter, r *http.Request, t *http.Transport) {
+	resp, err := t.RoundTrip(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
