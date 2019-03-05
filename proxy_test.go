@@ -13,11 +13,30 @@ import (
 	"testing"
 )
 
-// It is possible, and probably more accurate, to test this using a sub-process
-// test (see https://talks.golang.org/2014/testing.slide#23). This would
-// involve building three separate binaries for the test client, proxy and test
-// server. But doing everything inside the test process means that we'll
-// collect coverage data. It's also a bit simpler to implement.
+type testServer struct {
+	requests chan<- string
+}
+
+func (ts testServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ts.requests <- fmt.Sprintf("%s to server", r.Method)
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintln(w, "Hello, client")
+}
+
+type testProxy struct {
+	requests chan<- string
+	name     string
+	delegate http.Handler
+}
+
+func newTestProxy(name string, requests chan<- string, pf proxyFinder) testProxy {
+	return testProxy{requests, name, NewProxyHandler(pf)}
+}
+
+func (tp testProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	tp.requests <- fmt.Sprintf("%s to %s", r.Method, tp.name)
+	tp.delegate.ServeHTTP(w, r)
+}
 
 type alwaysProxy struct {
 	proxy string
@@ -27,12 +46,20 @@ func (s alwaysProxy) FindProxyForURL(u *url.URL) (string, error) {
 	return fmt.Sprintf("PROXY %s", s.proxy), nil
 }
 
-func serverHandlerFunc(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintln(w, "Hello, client")
+func proxyFunc(t *testing.T, proxy *httptest.Server) func(*http.Request) (*url.URL, error) {
+	u, err := url.Parse(proxy.URL)
+	require.Nil(t, err)
+	return http.ProxyURL(u)
 }
 
-func testClient(t *testing.T, client *http.Client, serverUrl string) {
+func tlsConfig(server *httptest.Server) *tls.Config {
+	cp := x509.NewCertPool()
+	cp.AddCert(server.Certificate())
+	return &tls.Config{RootCAs: cp}
+}
+
+func testGetRequest(t *testing.T, tr *http.Transport, serverUrl string) {
+	client := http.Client{Transport: tr}
 	resp, err := client.Get(serverUrl)
 	require.Nil(t, err)
 	defer resp.Body.Close()
@@ -42,60 +69,60 @@ func testClient(t *testing.T, client *http.Client, serverUrl string) {
 	assert.Equal(t, "Hello, client\n", string(buf))
 }
 
-func TestProxyDirect(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(serverHandlerFunc))
+func TestGetViaProxy(t *testing.T) {
+	requests := make(chan string, 2)
+	server := httptest.NewServer(testServer{requests})
 	defer server.Close()
-	proxy := httptest.NewServer(NewProxyHandler(alwaysDirect{}))
+	proxy := httptest.NewServer(newTestProxy("proxy", requests, alwaysDirect{}))
 	defer proxy.Close()
-	proxyUrl, err := url.Parse(proxy.URL)
-	require.Nil(t, err)
-	client := &http.Client{
-		Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}}
-	testClient(t, client, server.URL)
+	tr := &http.Transport{Proxy: proxyFunc(t, proxy)}
+	testGetRequest(t, tr, server.URL)
+	require.Len(t, requests, 2)
+	assert.Equal(t, "GET to proxy", <-requests)
+	assert.Equal(t, "GET to server", <-requests)
 }
 
-func TestProxyDirectTls(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(serverHandlerFunc))
+func TestGetOverTlsViaProxy(t *testing.T) {
+	requests := make(chan string, 2)
+	server := httptest.NewTLSServer(testServer{requests})
 	defer server.Close()
-	proxy := httptest.NewServer(NewProxyHandler(alwaysDirect{}))
+	proxy := httptest.NewServer(newTestProxy("proxy", requests, alwaysDirect{}))
 	defer proxy.Close()
-	proxyUrl, err := url.Parse(proxy.URL)
-	require.Nil(t, err)
-	cp := x509.NewCertPool()
-	cp.AddCert(server.Certificate())
-	client := &http.Client{Transport: &http.Transport{
-		Proxy:           http.ProxyURL(proxyUrl),
-		TLSClientConfig: &tls.Config{RootCAs: cp}}}
-	testClient(t, client, server.URL)
+	tr := &http.Transport{Proxy: proxyFunc(t, proxy), TLSClientConfig: tlsConfig(server)}
+	testGetRequest(t, tr, server.URL)
+	require.Len(t, requests, 2)
+	assert.Equal(t, "CONNECT to proxy", <-requests)
+	assert.Equal(t, "GET to server", <-requests)
 }
 
-func TestTwoProxies(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(serverHandlerFunc))
+func TestGetViaTwoProxies(t *testing.T) {
+	requests := make(chan string, 3)
+	server := httptest.NewServer(testServer{requests})
 	defer server.Close()
-	proxy1 := httptest.NewServer(NewProxyHandler(alwaysDirect{}))
+	proxy1 := httptest.NewServer(newTestProxy("proxy1", requests, alwaysDirect{}))
 	defer proxy1.Close()
-	proxy2 := httptest.NewServer(NewProxyHandler(alwaysProxy{proxy1.URL}))
+	proxy2 := httptest.NewServer(newTestProxy("proxy2", requests, alwaysProxy{proxy1.URL}))
 	defer proxy2.Close()
-	proxy2Url, err := url.Parse(proxy2.URL)
-	require.Nil(t, err)
-	client := &http.Client{
-		Transport: &http.Transport{Proxy: http.ProxyURL(proxy2Url)}}
-	testClient(t, client, server.URL)
+	tr := &http.Transport{Proxy: proxyFunc(t, proxy2)}
+	testGetRequest(t, tr, server.URL)
+	require.Len(t, requests, 3)
+	assert.Equal(t, "GET to proxy2", <-requests)
+	assert.Equal(t, "GET to proxy1", <-requests)
+	assert.Equal(t, "GET to server", <-requests)
 }
 
-func TestTwoProxiesTls(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(serverHandlerFunc))
+func TestGetOverTlsViaTwoProxies(t *testing.T) {
+	requests := make(chan string, 3)
+	server := httptest.NewTLSServer(testServer{requests})
 	defer server.Close()
-	proxy1 := httptest.NewServer(NewProxyHandler(alwaysDirect{}))
+	proxy1 := httptest.NewServer(newTestProxy("proxy1", requests, alwaysDirect{}))
 	defer proxy1.Close()
-	proxy2 := httptest.NewServer(NewProxyHandler(alwaysProxy{proxy1.URL}))
+	proxy2 := httptest.NewServer(newTestProxy("proxy2", requests, alwaysProxy{proxy1.URL}))
 	defer proxy2.Close()
-	proxy2Url, err := url.Parse(proxy2.URL)
-	require.Nil(t, err)
-	cp := x509.NewCertPool()
-	cp.AddCert(server.Certificate())
-	client := &http.Client{Transport: &http.Transport{
-		Proxy:           http.ProxyURL(proxy2Url),
-		TLSClientConfig: &tls.Config{RootCAs: cp}}}
-	testClient(t, client, server.URL)
+	tr := &http.Transport{Proxy: proxyFunc(t, proxy2), TLSClientConfig: tlsConfig(server)}
+	testGetRequest(t, tr, server.URL)
+	require.Len(t, requests, 3)
+	assert.Equal(t, "CONNECT to proxy2", <-requests)
+	assert.Equal(t, "CONNECT to proxy1", <-requests)
+	assert.Equal(t, "GET to server", <-requests)
 }
