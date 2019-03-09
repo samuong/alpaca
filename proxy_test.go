@@ -29,8 +29,13 @@ type testProxy struct {
 	delegate http.Handler
 }
 
-func newTestProxy(name string, requests chan<- string, pf proxyFinder) testProxy {
-	return testProxy{requests, name, NewProxyHandler(pf)}
+func newDirectProxy(name string, requests chan<- string) testProxy {
+	return testProxy{requests, name, NewProxyHandler(alwaysDirect{})}
+}
+
+func newChildProxy(name string, requests chan<- string, parent *httptest.Server) testProxy {
+	handler := NewProxyHandler(alwaysProxy{parent.Listener.Addr().String()})
+	return testProxy{requests, name, handler}
 }
 
 func (tp testProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +78,7 @@ func TestGetViaProxy(t *testing.T) {
 	requests := make(chan string, 2)
 	server := httptest.NewServer(testServer{requests})
 	defer server.Close()
-	proxy := httptest.NewServer(newTestProxy("proxy", requests, alwaysDirect{}))
+	proxy := httptest.NewServer(newDirectProxy("proxy", requests))
 	defer proxy.Close()
 	tr := &http.Transport{Proxy: proxyFunc(t, proxy)}
 	testGetRequest(t, tr, server.URL)
@@ -86,7 +91,7 @@ func TestGetOverTlsViaProxy(t *testing.T) {
 	requests := make(chan string, 2)
 	server := httptest.NewTLSServer(testServer{requests})
 	defer server.Close()
-	proxy := httptest.NewServer(newTestProxy("proxy", requests, alwaysDirect{}))
+	proxy := httptest.NewServer(newDirectProxy("proxy", requests))
 	defer proxy.Close()
 	tr := &http.Transport{Proxy: proxyFunc(t, proxy), TLSClientConfig: tlsConfig(server)}
 	testGetRequest(t, tr, server.URL)
@@ -99,15 +104,15 @@ func TestGetViaTwoProxies(t *testing.T) {
 	requests := make(chan string, 3)
 	server := httptest.NewServer(testServer{requests})
 	defer server.Close()
-	proxy1 := httptest.NewServer(newTestProxy("proxy1", requests, alwaysDirect{}))
-	defer proxy1.Close()
-	proxy2 := httptest.NewServer(newTestProxy("proxy2", requests, alwaysProxy{proxy1.URL}))
-	defer proxy2.Close()
-	tr := &http.Transport{Proxy: proxyFunc(t, proxy2)}
+	parent := httptest.NewServer(newDirectProxy("parent proxy", requests))
+	defer parent.Close()
+	child := httptest.NewServer(newChildProxy("child proxy", requests, parent))
+	defer child.Close()
+	tr := &http.Transport{Proxy: proxyFunc(t, child)}
 	testGetRequest(t, tr, server.URL)
 	require.Len(t, requests, 3)
-	assert.Equal(t, "GET to proxy2", <-requests)
-	assert.Equal(t, "GET to proxy1", <-requests)
+	assert.Equal(t, "GET to child proxy", <-requests)
+	assert.Equal(t, "GET to parent proxy", <-requests)
 	assert.Equal(t, "GET to server", <-requests)
 }
 
@@ -115,14 +120,14 @@ func TestGetOverTlsViaTwoProxies(t *testing.T) {
 	requests := make(chan string, 3)
 	server := httptest.NewTLSServer(testServer{requests})
 	defer server.Close()
-	proxy1 := httptest.NewServer(newTestProxy("proxy1", requests, alwaysDirect{}))
-	defer proxy1.Close()
-	proxy2 := httptest.NewServer(newTestProxy("proxy2", requests, alwaysProxy{proxy1.URL}))
-	defer proxy2.Close()
-	tr := &http.Transport{Proxy: proxyFunc(t, proxy2), TLSClientConfig: tlsConfig(server)}
+	parent := httptest.NewServer(newDirectProxy("parent proxy", requests))
+	defer parent.Close()
+	child := httptest.NewServer(newChildProxy("child proxy", requests, parent))
+	defer child.Close()
+	tr := &http.Transport{Proxy: proxyFunc(t, child), TLSClientConfig: tlsConfig(server)}
 	testGetRequest(t, tr, server.URL)
 	require.Len(t, requests, 3)
-	assert.Equal(t, "CONNECT to proxy2", <-requests)
-	assert.Equal(t, "CONNECT to proxy1", <-requests)
+	assert.Equal(t, "CONNECT to child proxy", <-requests)
+	assert.Equal(t, "CONNECT to parent proxy", <-requests)
 	assert.Equal(t, "GET to server", <-requests)
 }

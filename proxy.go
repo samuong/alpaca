@@ -42,15 +42,15 @@ func NewProxyHandler(pf proxyFinder) ProxyHandler {
 		if trimmed == "DIRECT" {
 			return nil, nil
 		}
-		var rawurl string
-		n, err := fmt.Sscanf(trimmed, "PROXY %s", &rawurl)
+		var host string
+		n, err := fmt.Sscanf(trimmed, "PROXY %s", &host)
 		if err == nil && n == 1 {
-			return url.Parse(rawurl)
+			return &url.URL{Host: host}, nil
 		}
-		n, err = fmt.Sscanf(trimmed, "SOCKS %s", &rawurl)
+		n, err = fmt.Sscanf(trimmed, "SOCKS %s", &host)
 		if err == nil && n == 1 {
 			msg := "warning: ignoring socks proxy '%s'"
-			log.Printf(msg, rawurl)
+			log.Printf(msg, host)
 			return nil, nil
 		}
 		log.Printf("warning: couldn't parse pac response '%s'", s)
