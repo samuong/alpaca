@@ -18,6 +18,7 @@ func main() {
 	port := flag.Int("p", 3128, "port number to listen on")
 	pac := flag.String("C", "", "url of proxy auto-config (pac) file")
 	flag.Parse()
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	var pf proxyFinder
 	if *pac == "" {
