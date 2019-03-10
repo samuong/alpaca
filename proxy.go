@@ -27,35 +27,35 @@ func (d alwaysDirect) FindProxyForURL(u *url.URL) (string, error) {
 	return "DIRECT", nil
 }
 
-func NewProxyHandler(pf proxyFinder) ProxyHandler {
-	proxyFunc := func(r *http.Request) (*url.URL, error) {
-		s, err := pf.FindProxyForURL(r.URL)
-		if err != nil {
-			return nil, err
-		}
-		ss := strings.Split(s, ";")
-		if len(ss) > 1 {
-			msg := "warning: ignoring all but first proxy in '%s'"
-			log.Printf(msg, s)
-		}
-		trimmed := strings.TrimSpace(ss[0])
-		if trimmed == "DIRECT" {
-			return nil, nil
-		}
-		var host string
-		n, err := fmt.Sscanf(trimmed, "PROXY %s", &host)
-		if err == nil && n == 1 {
-			return &url.URL{Host: host}, nil
-		}
-		n, err = fmt.Sscanf(trimmed, "SOCKS %s", &host)
-		if err == nil && n == 1 {
-			msg := "warning: ignoring socks proxy '%s'"
-			log.Printf(msg, host)
-			return nil, nil
-		}
-		log.Printf("warning: couldn't parse pac response '%s'", s)
+func findProxyForRequest(pf proxyFinder, r *http.Request) (*url.URL, error) {
+	s, err := pf.FindProxyForURL(r.URL)
+	if err != nil {
 		return nil, err
 	}
+	ss := strings.Split(s, ";")
+	if len(ss) > 1 {
+		log.Printf("warning: ignoring all but first proxy in '%s'", s)
+	}
+	trimmed := strings.TrimSpace(ss[0])
+	if trimmed == "DIRECT" {
+		return nil, nil
+	}
+	var host string
+	n, err := fmt.Sscanf(trimmed, "PROXY %s", &host)
+	if err == nil && n == 1 {
+		return &url.URL{Host: host}, nil
+	}
+	n, err = fmt.Sscanf(trimmed, "SOCKS %s", &host)
+	if err == nil && n == 1 {
+		log.Printf("warning: ignoring socks proxy '%s'", host)
+		return nil, nil
+	}
+	log.Printf("warning: couldn't parse pac response '%s'", s)
+	return nil, err
+}
+
+func NewProxyHandler(pf proxyFinder) ProxyHandler {
+	proxyFunc := func(r *http.Request) (*url.URL, error) { return findProxyForRequest(pf, r) }
 	return ProxyHandler{pf, &http.Transport{Proxy: proxyFunc}}
 }
 

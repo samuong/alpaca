@@ -24,15 +24,8 @@ func main() {
 	if *pac == "" {
 		pf = alwaysDirect{}
 	} else {
-		log.Printf("Downloading proxy auto-config file: %s\n", *pac)
-		// http.DefaultClient looks at the http(s)_proxy environment
-		// variable, which could be pointing at this not-yet-launched
-		// instance of alpaca. Use a no-proxy client instead.
-		client := &http.Client{Transport: &http.Transport{Proxy: nil}}
-		resp, err := client.Get(*pac)
-		check(err)
-		defer resp.Body.Close()
-		pf, err = NewPacRunner(resp.Body)
+		var err error
+		pf, err = NewDirectFallback(*pac)
 		check(err)
 	}
 
@@ -40,10 +33,9 @@ func main() {
 		// Set the addr to localhost so that we only listen locally.
 		Addr:    fmt.Sprintf("localhost:%d", *port),
 		Handler: NewProxyHandler(pf),
-		// TODO: Implement HTTP/2 support. In the meantime, set
-		// TLSNextProto to a non-nil value to disable HTTP/2.
-		TLSNextProto: make(map[string]func(
-			*http.Server, *tls.Conn, http.Handler))}
+		// TODO: Implement HTTP/2 support. In the meantime, set TLSNextProto to a non-nil
+		// value to disable HTTP/2.
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler))}
 	log.Printf("Listening on port %d\n", *port)
 	check(s.ListenAndServe())
 }
