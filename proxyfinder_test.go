@@ -12,16 +12,12 @@ import (
 	"testing"
 )
 
-type directFallbackTestContext struct {
-	clientAddrs []net.Addr
+type proxyFinderTestContext struct {
+	addrs []net.Addr
 }
 
-func (c directFallbackTestContext) interfaceAddrs() ([]net.Addr, error) {
-	return c.clientAddrs, nil
-}
-
-func (c directFallbackTestContext) serverIsReachableFromClient() bool {
-	for _, addr := range c.clientAddrs {
+func (c proxyFinderTestContext) serverIsReachableFromClient() bool {
+	for _, addr := range c.addrs {
 		if strings.HasPrefix(addr.String(), "10.") {
 			return true
 		}
@@ -29,7 +25,7 @@ func (c directFallbackTestContext) serverIsReachableFromClient() bool {
 	return false
 }
 
-func (c directFallbackTestContext) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (c proxyFinderTestContext) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !c.serverIsReachableFromClient() {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
@@ -46,23 +42,18 @@ func checkProxyForURL(t *testing.T, pf *ProxyFinder, rawUrl string, expectedProx
 
 func TestProxyFinder(t *testing.T) {
 	// initially, we're not on the network, and only have a loopback address
-	c := &directFallbackTestContext{toAddrs("127.0.0.1")}
+	c := &proxyFinderTestContext{toAddrs("127.0.0.1")}
 	pacServer := httptest.NewServer(c)
 	defer pacServer.Close()
-	f := func() ([]net.Addr, error) { return c.interfaceAddrs() }
-	pf := &ProxyFinder{
-		pacUrl: pacServer.URL,
-		client: &http.Client{Transport: &http.Transport{Proxy: nil}},
-		nm:     &NetMonitor{make(map[string]struct{}), f},
-	}
+	pf := newProxyFinder(pacServer.URL, func() ([]net.Addr, error) { return c.addrs, nil })
 	checkProxyForURL(t, pf, "https://www.anz.com.au/personal/", nil)
 	// connect to a corporate wifi, and get a 10.0.0.0/8 address
-	c.clientAddrs = toAddrs("127.0.0.1", "10.20.30.40")
+	c.addrs = toAddrs("127.0.0.1", "10.20.30.40")
 	checkProxyForURL(t, pf, "https://www.anz.com.au/personal/", &url.URL{Host: "proxy.anz.com"})
 	// tether, and get a 192.168.0.0/16 address
-	c.clientAddrs = toAddrs("127.0.0.1", "192.168.1.2")
+	c.addrs = toAddrs("127.0.0.1", "192.168.1.2")
 	checkProxyForURL(t, pf, "https://www.anz.com.au/personal/", nil)
 	// get back on the corporate wifi
-	c.clientAddrs = toAddrs("127.0.0.1", "10.20.30.40")
+	c.addrs = toAddrs("127.0.0.1", "10.20.30.40")
 	checkProxyForURL(t, pf, "https://www.anz.com.au/personal/", &url.URL{Host: "proxy.anz.com"})
 }

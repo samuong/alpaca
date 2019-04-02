@@ -6,18 +6,18 @@ import (
 )
 
 type NetMonitor struct {
-	addrs map[string]struct{}
-	p     addressProvider
+	addrs    map[string]struct{}
+	getAddrs addressProvider
 }
 
 type addressProvider func() ([]net.Addr, error)
 
-func NewNetMonitor() *NetMonitor {
-	return &NetMonitor{make(map[string]struct{}), net.InterfaceAddrs}
+func NewNetMonitor(getAddrs addressProvider) *NetMonitor {
+	return &NetMonitor{make(map[string]struct{}), getAddrs}
 }
 
 func (nm *NetMonitor) AddrsChanged() bool {
-	addrs, err := nm.p()
+	addrs, err := nm.getAddrs()
 	if err != nil {
 		log.Printf("warning: %s\n", err)
 		return false

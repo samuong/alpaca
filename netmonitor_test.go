@@ -26,7 +26,7 @@ func toAddrs(ss ...string) []net.Addr {
 
 func TestNetworkMonitor(t *testing.T) {
 	var next []net.Addr
-	nm := NetMonitor{make(map[string]struct{}), func() ([]net.Addr, error) { return next, nil }}
+	nm := NewNetMonitor(func() ([]net.Addr, error) { return next, nil })
 	// Start with just loopback interfaces
 	next = toAddrs("127.0.0.1/8", "::1/128")
 	assert.True(t, nm.AddrsChanged())
