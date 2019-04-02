@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-type DirectFallback struct {
+type ProxyFinder struct {
 	pacUrl string
 	pf     *PacRunner
 	client *http.Client
@@ -16,8 +16,8 @@ type DirectFallback struct {
 	online bool
 }
 
-func NewDirectFallback(pacUrl string) *DirectFallback {
-	ps := &DirectFallback{
+func NewProxyFinder(pacUrl string) *ProxyFinder {
+	pf := &ProxyFinder{
 		pacUrl: pacUrl,
 		// http.DefaultClient looks at the http(s)_proxy environment variable, which could
 		// be pointing at this instance of alpaca. This will either not be running yet,
@@ -27,19 +27,19 @@ func NewDirectFallback(pacUrl string) *DirectFallback {
 		nm:     NewNetMonitor(),
 		online: false,
 	}
-	ps.downloadPacFile()
-	return ps
+	pf.downloadPacFile()
+	return pf
 }
 
-func (ps *DirectFallback) findProxyForRequest(r *http.Request) (*url.URL, error) {
+func (pf *ProxyFinder) findProxyForRequest(r *http.Request) (*url.URL, error) {
 	// TODO: this is probably not thread-safe; put a lock around it
-	if ps.nm.AddrsChanged() {
-		ps.downloadPacFile()
+	if pf.nm.AddrsChanged() {
+		pf.downloadPacFile()
 	}
-	if !ps.online {
+	if !pf.online {
 		return nil, nil
 	}
-	s, err := ps.pf.FindProxyForURL(r.URL)
+	s, err := pf.pf.FindProxyForURL(r.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -65,28 +65,28 @@ func (ps *DirectFallback) findProxyForRequest(r *http.Request) (*url.URL, error)
 	return nil, err
 }
 
-func (ps *DirectFallback) downloadPacFile() {
-	log.Printf("Downloading proxy auto-config file: %s\n", ps.pacUrl)
-	resp, err := ps.client.Get(ps.pacUrl)
+func (pf *ProxyFinder) downloadPacFile() {
+	log.Printf("Downloading proxy auto-config file: %s\n", pf.pacUrl)
+	resp, err := pf.client.Get(pf.pacUrl)
 	if err != nil {
 		log.Printf("error downloading pac file: %s\n", err.Error())
 		log.Printf("falling back to direct proxy")
-		ps.online = false
+		pf.online = false
 		return
 	}
 	defer resp.Body.Close()
 	log.Printf("got a status code of: %s\n", resp.Status)
 	if resp.StatusCode != http.StatusOK {
-		ps.online = false
+		pf.online = false
 		return
 	}
-	ps.pf, err = NewPacRunner(resp.Body)
+	pf.pf, err = NewPacRunner(resp.Body)
 	if err != nil {
 		log.Printf("error creating new pac runner: %s\n", err.Error())
 		log.Printf("falling back to direct proxy")
-		ps.online = false
+		pf.online = false
 		return
 	}
-	ps.online = true
+	pf.online = true
 	return
 }

@@ -16,8 +16,8 @@ type ProxyHandler struct {
 }
 
 func NewProxyHandler(pacURL string) ProxyHandler {
-	ps := NewDirectFallback(pacURL)
-	proxyFunc := func(r *http.Request) (*url.URL, error) { return ps.findProxyForRequest(r) }
+	pf := NewProxyFinder(pacURL)
+	proxyFunc := func(r *http.Request) (*url.URL, error) { return pf.findProxyForRequest(r) }
 	return ProxyHandler{&http.Transport{Proxy: proxyFunc}}
 }
 
