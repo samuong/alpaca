@@ -30,25 +30,20 @@ type testProxy struct {
 }
 
 func newDirectProxy(name string, requests chan<- string) testProxy {
-	return testProxy{requests, name, NewProxyHandler(alwaysDirect{})}
+	alwaysDirect := func(r *http.Request) (*url.URL, error) { return nil, nil }
+	return testProxy{requests, name, ProxyHandler{&http.Transport{Proxy: alwaysDirect}}}
 }
 
 func newChildProxy(name string, requests chan<- string, parent *httptest.Server) testProxy {
-	handler := NewProxyHandler(alwaysProxy{parent.Listener.Addr().String()})
-	return testProxy{requests, name, handler}
+	alwaysProxy := func(r *http.Request) (*url.URL, error) {
+		return &url.URL{Host: parent.Listener.Addr().String()}, nil
+	}
+	return testProxy{requests, name, ProxyHandler{&http.Transport{Proxy: alwaysProxy}}}
 }
 
 func (tp testProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	tp.requests <- fmt.Sprintf("%s to %s", r.Method, tp.name)
 	tp.delegate.ServeHTTP(w, r)
-}
-
-type alwaysProxy struct {
-	proxy string
-}
-
-func (s alwaysProxy) FindProxyForURL(u *url.URL) (string, error) {
-	return fmt.Sprintf("PROXY %s", s.proxy), nil
 }
 
 func proxyFunc(t *testing.T, proxy *httptest.Server) func(*http.Request) (*url.URL, error) {

@@ -8,55 +8,17 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 )
 
 type ProxyHandler struct {
-	pf proxyFinder
-	t  *http.Transport
+	t *http.Transport
 }
 
-type proxyFinder interface {
-	FindProxyForURL(u *url.URL) (string, error)
-}
-
-type alwaysDirect struct{}
-
-func (d alwaysDirect) FindProxyForURL(u *url.URL) (string, error) {
-	return "DIRECT", nil
-}
-
-func findProxyForRequest(pf proxyFinder, r *http.Request) (*url.URL, error) {
-	s, err := pf.FindProxyForURL(r.URL)
-	if err != nil {
-		return nil, err
-	}
-	ss := strings.Split(s, ";")
-	if len(ss) > 1 {
-		log.Printf("warning: ignoring all but first proxy in '%s'", s)
-	}
-	trimmed := strings.TrimSpace(ss[0])
-	if trimmed == "DIRECT" {
-		return nil, nil
-	}
-	var host string
-	n, err := fmt.Sscanf(trimmed, "PROXY %s", &host)
-	if err == nil && n == 1 {
-		return &url.URL{Host: host}, nil
-	}
-	n, err = fmt.Sscanf(trimmed, "SOCKS %s", &host)
-	if err == nil && n == 1 {
-		log.Printf("warning: ignoring socks proxy '%s'", host)
-		return nil, nil
-	}
-	log.Printf("warning: couldn't parse pac response '%s'", s)
-	return nil, err
-}
-
-func NewProxyHandler(pf proxyFinder) ProxyHandler {
-	proxyFunc := func(r *http.Request) (*url.URL, error) { return findProxyForRequest(pf, r) }
-	return ProxyHandler{pf, &http.Transport{Proxy: proxyFunc}}
+func NewProxyHandler(pacURL string) ProxyHandler {
+	ps := NewDirectFallback(pacURL)
+	proxyFunc := func(r *http.Request) (*url.URL, error) { return ps.findProxyForRequest(r) }
+	return ProxyHandler{&http.Transport{Proxy: proxyFunc}}
 }
 
 func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
