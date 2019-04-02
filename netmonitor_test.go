@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"github.com/stretchr/testify/assert"
 	"net"
 	"testing"
@@ -42,4 +43,9 @@ func TestNetworkMonitor(t *testing.T) {
 	// Disconnect, and go back to having just loopback addresses
 	next = toAddrs("127.0.0.1/8", "::1/128")
 	assert.True(t, nm.AddrsChanged())
+}
+
+func TestFailToGetAddrs(t *testing.T) {
+	nm := NewNetMonitor(func() ([]net.Addr, error) { return nil, errors.New("failed") })
+	assert.False(t, nm.AddrsChanged())
 }
