@@ -19,7 +19,7 @@ func NewNetMonitor(getAddrs addressProvider) *NetMonitor {
 func (nm *NetMonitor) AddrsChanged() bool {
 	addrs, err := nm.getAddrs()
 	if err != nil {
-		log.Printf("warning: %s\n", err)
+		log.Printf("Error while getting network interface addresses: %q\n", err)
 		return false
 	}
 	set := addrSliceToSet(addrs)

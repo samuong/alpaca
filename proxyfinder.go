@@ -43,9 +43,10 @@ func (pf *ProxyFinder) findProxyForRequest(r *http.Request) (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("%s %s -> %q", r.Method, r.URL, s)
 	ss := strings.Split(s, ";")
 	if len(ss) > 1 {
-		log.Printf("warning: ignoring all but first proxy in '%s'", s)
+		log.Printf("Warning: ignoring all but first proxy in %q", s)
 	}
 	trimmed := strings.TrimSpace(ss[0])
 	if trimmed == "DIRECT" {
@@ -58,32 +59,29 @@ func (pf *ProxyFinder) findProxyForRequest(r *http.Request) (*url.URL, error) {
 	}
 	n, err = fmt.Sscanf(trimmed, "SOCKS %s", &host)
 	if err == nil && n == 1 {
-		log.Printf("warning: ignoring socks proxy '%s'", host)
+		log.Printf("Warning: ignoring SOCKS proxy %q", host)
 		return nil, nil
 	}
-	log.Printf("warning: couldn't parse pac response '%s'", s)
+	log.Printf("Couldn't parse PAC response %q", s)
 	return nil, err
 }
 
 func (pf *ProxyFinder) downloadPacFile() {
-	log.Printf("Downloading proxy auto-config file: %s\n", pf.pacURL)
 	resp, err := noProxyClient.Get(pf.pacURL)
 	if err != nil {
-		log.Printf("error downloading pac file: %s\n", err.Error())
-		log.Printf("falling back to direct proxy")
+		log.Printf("Error downloading PAC file from %q: %q\n", pf.pacURL, err)
 		pf.online = false
 		return
 	}
 	defer resp.Body.Close()
-	log.Printf("got a status code of: %s\n", resp.Status)
+	log.Printf("GET %q, status = %q\n", pf.pacURL, resp.Status)
 	if resp.StatusCode != http.StatusOK {
 		pf.online = false
 		return
 	}
 	pf.pacRunner, err = NewPacRunner(resp.Body)
 	if err != nil {
-		log.Printf("error creating new pac runner: %s\n", err.Error())
-		log.Printf("falling back to direct proxy")
+		log.Printf("Error creating new PAC runner: %q\n", err)
 		pf.online = false
 		return
 	}

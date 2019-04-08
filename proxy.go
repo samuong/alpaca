@@ -55,7 +55,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request, t *http.Transport) {
 		// The response status has already been sent, so if hijacking
 		// fails, we can't return an error status to the client.
 		// Instead, log the error and finish up.
-		log.Printf("Error hijacking connection to %v", r.Host)
+		log.Printf("Error hijacking connection to %v: %s", r.Host, err)
 		server.Close()
 		return
 	}
@@ -113,8 +113,8 @@ func transfer(wg *sync.WaitGroup, dst, src net.Conn) {
 	defer wg.Done()
 	_, err := io.Copy(dst, src)
 	if err != nil {
-		log.Printf("Error copying from %v to %v",
-			src.RemoteAddr().String(), dst.RemoteAddr().String())
+		log.Printf("Error copying from %v to %v: %s",
+			src.RemoteAddr().String(), dst.RemoteAddr().String(), err)
 	}
 }
 
@@ -138,7 +138,7 @@ func proxyRequest(w http.ResponseWriter, r *http.Request, t *http.Transport) {
 		// The response status has already been sent, so if copying
 		// fails, we can't return an error status to the client.
 		// Instead, log the error.
-		log.Printf("Error copying response body from %v", r.Host)
+		log.Printf("Error copying response body from %v: %s", r.Host, err)
 		return
 	}
 }
