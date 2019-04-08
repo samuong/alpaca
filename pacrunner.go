@@ -7,12 +7,14 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file
 
 type PacRunner struct {
-	vm *otto.Otto
+	vm  *otto.Otto
+	mux sync.Mutex
 }
 
 func NewPacRunner(r io.Reader) (*PacRunner, error) {
@@ -36,10 +38,12 @@ func NewPacRunner(r io.Reader) (*PacRunner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &PacRunner{vm}, nil
+	return &PacRunner{vm: vm}, nil
 }
 
 func (pr *PacRunner) FindProxyForURL(u *url.URL) (string, error) {
+	pr.mux.Lock()
+	defer pr.mux.Unlock()
 	// TODO: Strip the path and query components of https:// URLs.
 	val, err := pr.vm.Call("FindProxyForURL", nil, u.String(), u.Hostname())
 	if err != nil {
