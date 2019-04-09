@@ -12,7 +12,7 @@ import (
 func TestFindPACURLForDarwin(t *testing.T) {
 	dir, err := ioutil.TempDir("", "alpaca")
 	require.Nil(t, err)
-	//defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
 	defer require.Nil(t, os.Setenv("PATH", oldpath))
 	require.Nil(t, os.Setenv("PATH", dir+":"+oldpath))
