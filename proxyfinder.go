@@ -69,7 +69,7 @@ func (pf *ProxyFinder) findProxyForRequest(r *http.Request) (*url.URL, error) {
 func (pf *ProxyFinder) downloadPacFile() {
 	resp, err := noProxyClient.Get(pf.pacURL)
 	if err != nil {
-		log.Printf("Error downloading PAC file from %q: %q\n", pf.pacURL, err)
+		log.Printf("Error downloading PAC file: %q\n", err)
 		pf.online = false
 		return
 	}
