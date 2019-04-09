@@ -51,9 +51,10 @@ func findPACURLForDarwin() (string, error) {
 		if err != nil {
 			log.Printf("Error getting auto proxy URL for %v: %v", networkService, err)
 			continue
-		} else if len(url) > 0 {
-			return url, nil
+		} else if url == "(null)" {
+			continue
 		}
+		return url, nil
 	}
 	return "", nil
 }
@@ -82,11 +83,7 @@ func getAutoProxyURL(networkService string) (string, error) {
 			// case we should start using the PAC URL for that service.
 			continue
 		}
-		url := strings.TrimSuffix(strings.TrimPrefix(line, "URL: "), "\n")
-		if url == "(null)" {
-			return "", nil
-		}
-		return url, nil
+		return strings.TrimSuffix(strings.TrimPrefix(line, "URL: "), "\n"), nil
 	}
 	return "", fmt.Errorf("No auto-proxy URL for network service %v", networkService)
 }
