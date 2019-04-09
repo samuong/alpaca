@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 )
 
 func main() {
@@ -19,14 +20,24 @@ func main() {
 		var err error
 		pacURL, err = findPACURL()
 		if err != nil {
-			log.Fatalf("Error finding PAC URL: %v", err)
+			log.Fatalf("Error auto-finding PAC URL: %v", err)
 		}
+	}
+
+	var handler ProxyHandler
+	if len(pacURL) == 0 {
+		log.Println("No PAC URL specified; all connections will be made directly")
+		handler = ProxyHandler{&http.Transport{Proxy: nil}}
+	} else if _, err := url.Parse(pacURL); err != nil {
+		log.Fatalf("Coudln't find a valid PAC URL: %v", pacURL)
+	} else {
+		handler = NewProxyHandler(pacURL)
 	}
 
 	s := &http.Server{
 		// Set the addr to localhost so that we only listen locally.
 		Addr:    fmt.Sprintf("localhost:%d", *port),
-		Handler: NewProxyHandler(pacURL),
+		Handler: handler,
 		// TODO: Implement HTTP/2 support. In the meantime, set TLSNextProto to a non-nil
 		// value to disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler))}
