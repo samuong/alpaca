@@ -12,12 +12,12 @@ import (
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file
 
-type PacRunner struct {
+type PACRunner struct {
 	vm  *otto.Otto
 	mux sync.Mutex
 }
 
-func NewPacRunner(r io.Reader) (*PacRunner, error) {
+func NewPACRunner(r io.Reader) (*PACRunner, error) {
 	vm := otto.New()
 	var err error
 	set := func(name string, handler func(otto.FunctionCall) otto.Value) {
@@ -38,10 +38,10 @@ func NewPacRunner(r io.Reader) (*PacRunner, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &PacRunner{vm: vm}, nil
+	return &PACRunner{vm: vm}, nil
 }
 
-func (pr *PacRunner) FindProxyForURL(u *url.URL) (string, error) {
+func (pr *PACRunner) FindProxyForURL(u *url.URL) (string, error) {
 	pr.mux.Lock()
 	defer pr.mux.Unlock()
 	// TODO: Strip the path and query components of https:// URLs.

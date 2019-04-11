@@ -34,8 +34,8 @@ func (c proxyFinderTestContext) ServeHTTP(w http.ResponseWriter, r *http.Request
 	fmt.Fprintf(w, `function FindProxyForURL(url, host) { return "PROXY proxy.anz.com" }`)
 }
 
-func checkProxyForURL(t *testing.T, pf *ProxyFinder, rawUrl string, expectedProxy *url.URL) {
-	proxy, err := pf.findProxyForRequest(httptest.NewRequest(http.MethodGet, rawUrl, nil))
+func checkProxyForURL(t *testing.T, pf *ProxyFinder, rawURL string, expectedProxy *url.URL) {
+	proxy, err := pf.findProxyForRequest(httptest.NewRequest(http.MethodGet, rawURL, nil))
 	require.Nil(t, err)
 	assert.Equal(t, expectedProxy, proxy)
 }

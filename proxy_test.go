@@ -17,8 +17,8 @@ type testServer struct {
 	requests chan<- string
 }
 
-func (ts testServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ts.requests <- fmt.Sprintf("%s to server", r.Method)
+func (ts testServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	ts.requests <- fmt.Sprintf("%s to server", req.Method)
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Hello, client")
 }
@@ -41,9 +41,9 @@ func newChildProxy(name string, requests chan<- string, parent *httptest.Server)
 	return testProxy{requests, name, ProxyHandler{&http.Transport{Proxy: alwaysProxy}}}
 }
 
-func (tp testProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	tp.requests <- fmt.Sprintf("%s to %s", r.Method, tp.name)
-	tp.delegate.ServeHTTP(w, r)
+func (tp testProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	tp.requests <- fmt.Sprintf("%s to %s", req.Method, tp.name)
+	tp.delegate.ServeHTTP(w, req)
 }
 
 func proxyFunc(t *testing.T, proxy *httptest.Server) func(*http.Request) (*url.URL, error) {
@@ -58,9 +58,9 @@ func tlsConfig(server *httptest.Server) *tls.Config {
 	return &tls.Config{RootCAs: cp}
 }
 
-func testGetRequest(t *testing.T, tr *http.Transport, serverUrl string) {
+func testGetRequest(t *testing.T, tr *http.Transport, serverURL string) {
 	client := http.Client{Transport: tr}
-	resp, err := client.Get(serverUrl)
+	resp, err := client.Get(serverURL)
 	require.Nil(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)

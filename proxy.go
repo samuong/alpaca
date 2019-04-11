@@ -12,7 +12,7 @@ import (
 )
 
 type ProxyHandler struct {
-	t *http.Transport
+	transport *http.Transport
 }
 
 func NewProxyHandler(pacURL string) ProxyHandler {
@@ -21,31 +21,31 @@ func NewProxyHandler(pacURL string) ProxyHandler {
 	return ProxyHandler{&http.Transport{Proxy: proxyFunc}}
 }
 
-func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodConnect {
-		handleConnect(w, r, ph.t)
+func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method == http.MethodConnect {
+		handleConnect(w, req, ph.transport)
 	} else {
-		proxyRequest(w, r, ph.t)
+		proxyRequest(w, req, ph.transport)
 	}
 }
 
-func handleConnect(w http.ResponseWriter, r *http.Request, t *http.Transport) {
+func handleConnect(w http.ResponseWriter, req *http.Request, tr *http.Transport) {
 	h, ok := w.(http.Hijacker)
 	if !ok {
-		msg := fmt.Sprintf("Can't hijack connection to %v", r.Host)
+		msg := fmt.Sprintf("Can't hijack connection to %v", req.Host)
 		http.Error(w, msg, http.StatusInternalServerError)
 		return
 	}
-	u, err := t.Proxy(r)
+	u, err := tr.Proxy(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	var server net.Conn
 	if u == nil {
-		server = connectToServer(w, r, t)
+		server = connectToServer(w, req, tr)
 	} else {
-		server = connectViaProxy(w, r, u.Host)
+		server = connectViaProxy(w, req, u.Host)
 	}
 	if server == nil {
 		return
@@ -55,7 +55,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request, t *http.Transport) {
 		// The response status has already been sent, so if hijacking
 		// fails, we can't return an error status to the client.
 		// Instead, log the error and finish up.
-		log.Printf("Error hijacking connection to %v: %s", r.Host, err)
+		log.Printf("Error hijacking connection to %v: %s", req.Host, err)
 		server.Close()
 		return
 	}
@@ -70,7 +70,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request, t *http.Transport) {
 	}()
 }
 
-func connectViaProxy(w http.ResponseWriter, r *http.Request, proxy string) net.Conn {
+func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string) net.Conn {
 	// can't hijack the connection to server, so can't just replay request via a Transport
 	// need to dial and manually write connect header and read response
 	conn, err := net.Dial("tcp", proxy)
@@ -78,9 +78,9 @@ func connectViaProxy(w http.ResponseWriter, r *http.Request, proxy string) net.C
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
-	r.Write(conn)
-	pr := bufio.NewReader(conn)
-	res, err := http.ReadResponse(pr, r)
+	req.Write(conn)
+	rd := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(rd, req)
 	// should we close the response body, or leave it so that the
 	// connection stays open?
 	// ...also, might need to check for any buffered data in the reader,
@@ -90,17 +90,17 @@ func connectViaProxy(w http.ResponseWriter, r *http.Request, proxy string) net.C
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
-	w.WriteHeader(res.StatusCode)
-	if res.StatusCode != http.StatusOK {
+	w.WriteHeader(resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
 		conn.Close()
 		return nil
 	}
 	return conn
 }
 
-func connectToServer(w http.ResponseWriter, r *http.Request, t *http.Transport) net.Conn {
+func connectToServer(w http.ResponseWriter, req *http.Request, tr *http.Transport) net.Conn {
 	// TODO: should probably put a timeout on this
-	conn, err := net.Dial("tcp", r.Host)
+	conn, err := net.Dial("tcp", req.Host)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
@@ -118,8 +118,8 @@ func transfer(wg *sync.WaitGroup, dst, src net.Conn) {
 	}
 }
 
-func proxyRequest(w http.ResponseWriter, r *http.Request, t *http.Transport) {
-	resp, err := t.RoundTrip(r)
+func proxyRequest(w http.ResponseWriter, req *http.Request, tr *http.Transport) {
+	resp, err := tr.RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -138,7 +138,7 @@ func proxyRequest(w http.ResponseWriter, r *http.Request, t *http.Transport) {
 		// The response status has already been sent, so if copying
 		// fails, we can't return an error status to the client.
 		// Instead, log the error.
-		log.Printf("Error copying response body from %v: %s", r.Host, err)
+		log.Printf("Error copying response body from %v: %s", req.Host, err)
 		return
 	}
 }

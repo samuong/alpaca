@@ -16,7 +16,7 @@ var noProxyClient = &http.Client{Transport: &http.Transport{Proxy: nil}}
 
 type ProxyFinder struct {
 	pacURL     string
-	pacRunner  *PacRunner
+	pacRunner  *PACRunner
 	netMonitor *NetMonitor
 	online     bool
 }
@@ -27,23 +27,23 @@ func NewProxyFinder(pacURL string) *ProxyFinder {
 
 func newProxyFinder(pacURL string, getAddrs addressProvider) *ProxyFinder {
 	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs)}
-	pf.downloadPacFile()
+	pf.downloadPACFile()
 	return pf
 }
 
-func (pf *ProxyFinder) findProxyForRequest(r *http.Request) (*url.URL, error) {
+func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) {
 	// TODO: this is probably not thread-safe; put a lock around it
 	if pf.netMonitor.AddrsChanged() {
-		pf.downloadPacFile()
+		pf.downloadPACFile()
 	}
 	if !pf.online {
 		return nil, nil
 	}
-	s, err := pf.pacRunner.FindProxyForURL(r.URL)
+	s, err := pf.pacRunner.FindProxyForURL(req.URL)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("%s %s -> %q", r.Method, r.URL, s)
+	log.Printf("%s %s -> %q", req.Method, req.URL, s)
 	ss := strings.Split(s, ";")
 	if len(ss) > 1 {
 		log.Printf("Warning: ignoring all but first proxy in %q", s)
@@ -66,7 +66,7 @@ func (pf *ProxyFinder) findProxyForRequest(r *http.Request) (*url.URL, error) {
 	return nil, err
 }
 
-func (pf *ProxyFinder) downloadPacFile() {
+func (pf *ProxyFinder) downloadPACFile() {
 	resp, err := noProxyClient.Get(pf.pacURL)
 	if err != nil {
 		log.Printf("Error downloading PAC file: %q\n", err)
@@ -79,7 +79,7 @@ func (pf *ProxyFinder) downloadPacFile() {
 		pf.online = false
 		return
 	}
-	pf.pacRunner, err = NewPacRunner(resp.Body)
+	pf.pacRunner, err = NewPACRunner(resp.Body)
 	if err != nil {
 		log.Printf("Error creating new PAC runner: %q\n", err)
 		pf.online = false
