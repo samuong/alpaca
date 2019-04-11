@@ -27,7 +27,8 @@ func main() {
 	var handler ProxyHandler
 	if len(pacURL) == 0 {
 		log.Println("No PAC URL specified; all connections will be made directly")
-		handler = ProxyHandler{&http.Transport{Proxy: nil}}
+		noproxy := func(*http.Request) (*url.URL, error) { return nil, nil }
+		handler = ProxyHandler{&http.Transport{Proxy: noproxy}}
 	} else if _, err := url.Parse(pacURL); err != nil {
 		log.Fatalf("Coudln't find a valid PAC URL: %v", pacURL)
 	} else {
