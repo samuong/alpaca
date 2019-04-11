@@ -50,24 +50,21 @@ func handleConnect(w http.ResponseWriter, req *http.Request, tr *http.Transport)
 	if server == nil {
 		return
 	}
+	defer server.Close()
 	client, _, err := h.Hijack()
 	if err != nil {
 		// The response status has already been sent, so if hijacking
 		// fails, we can't return an error status to the client.
 		// Instead, log the error and finish up.
 		log.Printf("Error hijacking connection to %v: %s", req.Host, err)
-		server.Close()
 		return
 	}
-	go func() {
-		defer server.Close()
-		defer client.Close()
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go transfer(&wg, server, client)
-		go transfer(&wg, client, server)
-		wg.Wait()
-	}()
+	defer client.Close()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go transfer(&wg, server, client)
+	go transfer(&wg, client, server)
+	wg.Wait()
 }
 
 func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string) net.Conn {
