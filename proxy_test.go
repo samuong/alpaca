@@ -31,14 +31,14 @@ type testProxy struct {
 
 func newDirectProxy(name string, requests chan<- string) testProxy {
 	alwaysDirect := func(r *http.Request) (*url.URL, error) { return nil, nil }
-	return testProxy{requests, name, ProxyHandler{&http.Transport{Proxy: alwaysDirect}}}
+	return testProxy{requests, name, NewProxyHandler(alwaysDirect)}
 }
 
 func newChildProxy(name string, requests chan<- string, parent *httptest.Server) testProxy {
 	alwaysProxy := func(r *http.Request) (*url.URL, error) {
 		return &url.URL{Host: parent.Listener.Addr().String()}, nil
 	}
-	return testProxy{requests, name, ProxyHandler{&http.Transport{Proxy: alwaysProxy}}}
+	return testProxy{requests, name, NewProxyHandler(alwaysProxy)}
 }
 
 func (tp testProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {

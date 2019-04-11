@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -13,15 +14,24 @@ import (
 
 type ProxyHandler struct {
 	transport *http.Transport
+	ids       chan uint
 }
 
-func NewProxyHandler(pacURL string) ProxyHandler {
-	pf := NewProxyFinder(pacURL)
-	proxyFunc := func(r *http.Request) (*url.URL, error) { return pf.findProxyForRequest(r) }
-	return ProxyHandler{&http.Transport{Proxy: proxyFunc}}
+func NewProxyHandler(proxyFunc func(*http.Request) (*url.URL, error)) ProxyHandler {
+	ids := make(chan uint)
+	go func() {
+		for id := uint(0); ; id++ {
+			ids <- id
+		}
+	}()
+	return ProxyHandler{&http.Transport{Proxy: proxyFunc}, ids}
 }
 
 func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	id := <-ph.ids
+	ctx := req.Context()
+	ctx = context.WithValue(ctx, "id", id)
+	req = req.WithContext(ctx)
 	if req.Method == http.MethodConnect {
 		handleConnect(w, req, ph.transport)
 	} else {
@@ -56,14 +66,14 @@ func handleConnect(w http.ResponseWriter, req *http.Request, tr *http.Transport)
 		// The response status has already been sent, so if hijacking
 		// fails, we can't return an error status to the client.
 		// Instead, log the error and finish up.
-		log.Printf("Error hijacking connection to %v: %s", req.Host, err)
+		log.Printf("[%d] Error hijacking connection: %s", req.Context().Value("id"), err)
 		return
 	}
 	defer client.Close()
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go transfer(&wg, server, client)
-	go transfer(&wg, client, server)
+	go transfer(req.Context(), server, client, &wg)
+	go transfer(req.Context(), client, server, &wg)
 	wg.Wait()
 }
 
@@ -77,7 +87,7 @@ func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string) net
 	}
 	err = req.Write(conn)
 	if err != nil {
-		log.Printf("Error writing CONNECT request to proxy: %v", err)
+		log.Printf("[%d] Error sending CONNECT request: %v", req.Context().Value("id"), err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
@@ -111,12 +121,11 @@ func connectToServer(w http.ResponseWriter, req *http.Request, tr *http.Transpor
 	return conn
 }
 
-func transfer(wg *sync.WaitGroup, dst, src net.Conn) {
+func transfer(ctx context.Context, dst, src net.Conn, wg *sync.WaitGroup) {
 	defer wg.Done()
 	_, err := io.Copy(dst, src)
 	if err != nil {
-		log.Printf("Error copying from %v to %v: %s",
-			src.RemoteAddr().String(), dst.RemoteAddr().String(), err)
+		log.Printf("[%d] Error copying: %v", ctx.Value("id"), err)
 	}
 }
 
@@ -140,7 +149,7 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, tr *http.Transport) 
 		// The response status has already been sent, so if copying
 		// fails, we can't return an error status to the client.
 		// Instead, log the error.
-		log.Printf("Error copying response body from %v: %s", req.Host, err)
+		log.Printf("[%d] Error copying response body: %s", req.Context().Value("id"), err)
 		return
 	}
 }

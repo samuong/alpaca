@@ -27,12 +27,18 @@ func main() {
 	var handler ProxyHandler
 	if len(pacURL) == 0 {
 		log.Println("No PAC URL specified; all connections will be made directly")
-		noproxy := func(*http.Request) (*url.URL, error) { return nil, nil }
-		handler = ProxyHandler{&http.Transport{Proxy: noproxy}}
+		handler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
+			log.Printf(`[%d] %s %s via "DIRECT"`,
+				req.Context().Value("id"), req.Method, req.URL)
+			return nil, nil
+		})
 	} else if _, err := url.Parse(pacURL); err != nil {
-		log.Fatalf("Coudln't find a valid PAC URL: %v", pacURL)
+		log.Fatalf("Couldn't find a valid PAC URL: %v", pacURL)
 	} else {
-		handler = NewProxyHandler(pacURL)
+		pf := NewProxyFinder(pacURL)
+		handler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
+			return pf.findProxyForRequest(req)
+		})
 	}
 
 	s := &http.Server{
@@ -41,7 +47,8 @@ func main() {
 		Handler: handler,
 		// TODO: Implement HTTP/2 support. In the meantime, set TLSNextProto to a non-nil
 		// value to disable HTTP/2.
-		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler))}
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+	}
 
 	log.Printf("Listening on port %d\n", *port)
 	if err := s.ListenAndServe(); err != nil {

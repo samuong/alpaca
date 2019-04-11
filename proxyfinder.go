@@ -43,10 +43,11 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("%s %s -> %q", req.Method, req.URL, s)
+	id := req.Context().Value("id")
+	log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, s)
 	ss := strings.Split(s, ";")
 	if len(ss) > 1 {
-		log.Printf("Warning: ignoring all but first proxy in %q", s)
+		log.Printf("[%d] Warning: ignoring all but first proxy in %q", id, s)
 	}
 	trimmed := strings.TrimSpace(ss[0])
 	if trimmed == "DIRECT" {
@@ -59,10 +60,10 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 	}
 	n, err = fmt.Sscanf(trimmed, "SOCKS %s", &host)
 	if err == nil && n == 1 {
-		log.Printf("Warning: ignoring SOCKS proxy %q", host)
+		log.Printf("[%d] Warning: ignoring SOCKS proxy %q", id, host)
 		return nil, nil
 	}
-	log.Printf("Couldn't parse PAC response %q", s)
+	log.Printf("[%d] Couldn't parse PAC response %q", id, s)
 	return nil, err
 }
 
@@ -74,7 +75,7 @@ func (pf *ProxyFinder) downloadPACFile() {
 		return
 	}
 	defer resp.Body.Close()
-	log.Printf("GET %q, status = %q\n", pf.pacURL, resp.Status)
+	log.Printf("GET %q returned %q\n", pf.pacURL, resp.Status)
 	if resp.StatusCode != http.StatusOK {
 		pf.online = false
 		return
