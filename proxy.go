@@ -75,7 +75,12 @@ func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string) net
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
-	req.Write(conn)
+	err = req.Write(conn)
+	if err != nil {
+		log.Printf("Error writing CONNECT request to proxy: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil
+	}
 	rd := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(rd, req)
 	// should we close the response body, or leave it so that the
