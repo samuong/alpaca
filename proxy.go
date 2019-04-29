@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 )
 
@@ -17,43 +18,49 @@ type ProxyHandler struct {
 	ids       chan uint
 }
 
-func NewProxyHandler(proxyFunc func(*http.Request) (*url.URL, error)) ProxyHandler {
+type proxyFunc func(*http.Request) (*url.URL, error)
+
+func NewProxyHandler(proxy proxyFunc) ProxyHandler {
+	return newProxyHandler(&http.Transport{Proxy: proxy})
+}
+
+func newProxyHandler(tr *http.Transport) ProxyHandler {
 	ids := make(chan uint)
 	go func() {
 		for id := uint(0); ; id++ {
 			ids <- id
 		}
 	}()
-	return ProxyHandler{&http.Transport{Proxy: proxyFunc}, ids}
+	return ProxyHandler{tr, ids}
 }
 
 func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	id := <-ph.ids
 	ctx := req.Context()
-	ctx = context.WithValue(ctx, "id", id)
+	ctx = context.WithValue(ctx, "id", <-ph.ids)
 	req = req.WithContext(ctx)
+	deleteRequestHeaders(req)
 	if req.Method == http.MethodConnect {
-		handleConnect(w, req, ph.transport)
+		handleConnect(w, req, ph.transport.Proxy)
 	} else {
 		proxyRequest(w, req, ph.transport)
 	}
 }
 
-func handleConnect(w http.ResponseWriter, req *http.Request, tr *http.Transport) {
+func handleConnect(w http.ResponseWriter, req *http.Request, proxy proxyFunc) {
 	h, ok := w.(http.Hijacker)
 	if !ok {
 		msg := fmt.Sprintf("Can't hijack connection to %v", req.Host)
 		http.Error(w, msg, http.StatusInternalServerError)
 		return
 	}
-	u, err := tr.Proxy(req)
+	u, err := proxy(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	var server net.Conn
 	if u == nil {
-		server = connectToServer(w, req, tr)
+		server = connectToServer(w, req)
 	} else {
 		server = connectViaProxy(w, req, u.Host)
 	}
@@ -102,6 +109,7 @@ func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string) net
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
+	copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		conn.Close()
@@ -110,7 +118,7 @@ func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string) net
 	return conn
 }
 
-func connectToServer(w http.ResponseWriter, req *http.Request, tr *http.Transport) net.Conn {
+func connectToServer(w http.ResponseWriter, req *http.Request) net.Conn {
 	// TODO: should probably put a timeout on this
 	conn, err := net.Dial("tcp", req.Host)
 	if err != nil {
@@ -129,20 +137,14 @@ func transfer(ctx context.Context, dst, src net.Conn, wg *sync.WaitGroup) {
 	}
 }
 
-func proxyRequest(w http.ResponseWriter, req *http.Request, tr *http.Transport) {
-	resp, err := tr.RoundTrip(req)
+func proxyRequest(w http.ResponseWriter, req *http.Request, transport http.RoundTripper) {
+	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
-	// TODO: Don't retransmit hop-by-hop headers.
-	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers#hbh
-	for k, vs := range resp.Header {
-		for _, v := range vs {
-			w.Header().Add(k, v)
-		}
-	}
+	copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
@@ -152,4 +154,46 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, tr *http.Transport) 
 		log.Printf("[%d] Error copying response body: %s", req.Context().Value("id"), err)
 		return
 	}
+}
+
+func deleteConnectionTokens(header http.Header) {
+	// Remove any header field(s) with the same name as a connection token (see
+	// https://tools.ietf.org/html/rfc2616#section-14.10)
+	if values, ok := header["Connection"]; ok {
+		for _, value := range values {
+			if value == "close" {
+				continue
+			}
+			tokens := strings.Split(value, ",")
+			for _, token := range tokens {
+				header.Del(strings.TrimSpace(token))
+			}
+		}
+	}
+}
+
+func deleteRequestHeaders(req *http.Request) {
+	// Delete hop-by-hop headers (see https://tools.ietf.org/html/rfc2616#section-13.5.1)
+	deleteConnectionTokens(req.Header)
+	req.Header.Del("Connection")
+	req.Header.Del("Keep-Alive")
+	req.Header.Del("Proxy-Authorization")
+	req.Header.Del("TE")
+	req.Header.Del("Upgrade")
+}
+
+func copyResponseHeaders(w http.ResponseWriter, resp *http.Response) {
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+	// Delete hop-by-hop headers (see https://tools.ietf.org/html/rfc2616#section-13.5.1)
+	deleteConnectionTokens(w.Header())
+	w.Header().Del("Connection")
+	w.Header().Del("Keep-Alive")
+	w.Header().Del("Proxy-Authenticate")
+	w.Header().Del("Trailer")
+	w.Header().Del("Transfer-Encoding")
+	w.Header().Del("Upgrade")
 }
