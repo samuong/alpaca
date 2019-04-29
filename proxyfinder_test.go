@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,9 @@ func (c proxyFinderTestContext) ServeHTTP(w http.ResponseWriter, r *http.Request
 }
 
 func checkProxyForURL(t *testing.T, pf *ProxyFinder, rawURL string, expectedProxy *url.URL) {
-	proxy, err := pf.findProxyForRequest(httptest.NewRequest(http.MethodGet, rawURL, nil))
+	req := httptest.NewRequest(http.MethodGet, rawURL, nil)
+	req = req.WithContext(context.WithValue(req.Context(), "id", 0))
+	proxy, err := pf.findProxyForRequest(req)
 	require.Nil(t, err)
 	assert.Equal(t, expectedProxy, proxy)
 }
