@@ -20,13 +20,13 @@ func main() {
 		var err error
 		pacURL, err = findPACURL()
 		if err != nil {
-			log.Fatalf("Error auto-finding PAC URL: %v", err)
+			log.Fatalf("Error while trying to detect PAC URL: %v", err)
 		}
 	}
 
 	var handler ProxyHandler
 	if len(pacURL) == 0 {
-		log.Println("No PAC URL specified; all connections will be made directly")
+		log.Println("No PAC URL specified or detected; all requests will be made directly")
 		handler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
 			log.Printf(`[%d] %s %s via "DIRECT"`,
 				req.Context().Value("id"), req.Method, req.URL)
