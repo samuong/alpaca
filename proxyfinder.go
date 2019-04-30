@@ -56,7 +56,14 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 	var host string
 	n, err := fmt.Sscanf(trimmed, "PROXY %s", &host)
 	if err == nil && n == 1 {
-		return &url.URL{Host: host}, nil
+		// The specified proxy should contain both a host and a port, but if for some reason
+		// it doesn't, assume port 80. This needs to be made explicit, as it eventually gets
+		// passed to net.Dial, which also requires a port.
+		proxy := &url.URL{Host: host}
+		if proxy.Port() == "" {
+			proxy.Host = net.JoinHostPort(host, "80")
+		}
+		return proxy, nil
 	}
 	n, err = fmt.Sscanf(trimmed, "SOCKS %s", &host)
 	if err == nil && n == 1 {
