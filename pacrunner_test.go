@@ -29,6 +29,14 @@ func TestDirect(t *testing.T) {
 	checkProxy(t, pr, "https://anz.com", "DIRECT")
 }
 
+func TestPathAndQueryStripping(t *testing.T) {
+	pr := newPACRunner(t, "url")
+	checkProxy(t, pr, "http://anz.com/path?secret=abc123", "http://anz.com/path?secret=abc123")
+	checkProxy(t, pr, "https://anz.com/path?secret=abc123", "https://anz.com")
+	checkProxy(t, pr, "wss://anz.com/websocket", "wss://anz.com")
+	checkProxy(t, pr, "https://anz.com/#fragment", "https://anz.com")
+}
+
 func TestIsPlainHostName(t *testing.T) {
 	pr := newPACRunner(t, `isPlainHostName(host) ? "y" : "n"`)
 	checkProxy(t, pr, "https://www", "y")

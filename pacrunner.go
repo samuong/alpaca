@@ -44,7 +44,17 @@ func NewPACRunner(r io.Reader) (*PACRunner, error) {
 func (pr *PACRunner) FindProxyForURL(u *url.URL) (string, error) {
 	pr.mux.Lock()
 	defer pr.mux.Unlock()
-	// TODO: Strip the path and query components of https:// URLs.
+	if u.Scheme == "https" || u.Scheme == "wss" {
+		// Strip the path and query components of https:// URLs.
+		// https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file#Parameters
+		// Like Chrome, also strip the path and query for wss:// URLs (secure WebSockets).
+		// https://cs.chromium.org/chromium/src/net/proxy_resolution/proxy_resolution_service.cc?rcl=fba6691ffca770dd0c916418601b9c9c019a2929&l=383
+		// It also seems like a good idea to strip the fragment, so do that too.
+		u.Path = ""
+		u.RawPath = ""
+		u.RawQuery = ""
+		u.Fragment = ""
+	}
 	val, err := pr.vm.Call("FindProxyForURL", nil, u.String(), u.Hostname())
 	if err != nil {
 		return "", err
