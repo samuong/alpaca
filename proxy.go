@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -15,23 +17,24 @@ import (
 
 type ProxyHandler struct {
 	transport *http.Transport
+	auth      *authenticator
 	ids       chan uint
 }
 
 type proxyFunc func(*http.Request) (*url.URL, error)
 
-func NewProxyHandler(proxy proxyFunc) ProxyHandler {
-	return newProxyHandler(&http.Transport{Proxy: proxy})
+func NewProxyHandler(proxy proxyFunc, auth *authenticator) ProxyHandler {
+	return newProxyHandler(&http.Transport{Proxy: proxy}, auth)
 }
 
-func newProxyHandler(tr *http.Transport) ProxyHandler {
+func newProxyHandler(tr *http.Transport, auth *authenticator) ProxyHandler {
 	ids := make(chan uint)
 	go func() {
 		for id := uint(0); ; id++ {
 			ids <- id
 		}
 	}()
-	return ProxyHandler{tr, ids}
+	return ProxyHandler{tr, auth, ids}
 }
 
 func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -40,20 +43,20 @@ func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	req = req.WithContext(ctx)
 	deleteRequestHeaders(req)
 	if req.Method == http.MethodConnect {
-		handleConnect(w, req, ph.transport.Proxy)
+		ph.handleConnect(w, req)
 	} else {
-		proxyRequest(w, req, ph.transport)
+		ph.proxyRequest(w, req, ph.auth)
 	}
 }
 
-func handleConnect(w http.ResponseWriter, req *http.Request, proxy proxyFunc) {
+func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	h, ok := w.(http.Hijacker)
 	if !ok {
 		msg := fmt.Sprintf("Can't hijack connection to %v", req.Host)
 		http.Error(w, msg, http.StatusInternalServerError)
 		return
 	}
-	u, err := proxy(req)
+	u, err := ph.transport.Proxy(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -62,7 +65,7 @@ func handleConnect(w http.ResponseWriter, req *http.Request, proxy proxyFunc) {
 	if u == nil {
 		server = connectToServer(w, req)
 	} else {
-		server = connectViaProxy(w, req, u.Host)
+		server = connectViaProxy(w, req, u.Host, ph.auth)
 	}
 	if server == nil {
 		return
@@ -84,7 +87,7 @@ func handleConnect(w http.ResponseWriter, req *http.Request, proxy proxyFunc) {
 	wg.Wait()
 }
 
-func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string) net.Conn {
+func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string, auth *authenticator) net.Conn {
 	// can't hijack the connection to server, so can't just replay request via a Transport
 	// need to dial and manually write connect header and read response
 	conn, err := net.Dial("tcp", proxy)
@@ -100,17 +103,41 @@ func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string) net
 	}
 	rd := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(rd, req)
-	// should we close the response body, or leave it so that the
-	// connection stays open?
-	// ...also, might need to check for any buffered data in the reader,
-	// and write it to the connection before moving on
 	if err != nil {
 		conn.Close()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
+	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+		resp.Body.Close()
+		conn.Close()
+		conn, err = net.Dial("tcp", proxy)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return nil
+		}
+		rd = bufio.NewReader(conn)
+		resp, err = auth.connect(req, conn, rd)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return nil
+		}
 	}
 	copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
+	if resp.ContentLength != -1 {
+		// Only copy/close the response body when there is a known ContentLength.
+		// Otherwise, assume that anything that comes after the header is tunnelled data
+		// that is not part of the response itself.
+		//
+		// Sometimes, a CONNECT response has no Content-Length header (in which case Go's
+		// net/http library will set resp.ContentLength to -1). When this happens, reading
+		// or closing resp.Body will block, possibly indefinitely.
+		if n, err := io.CopyN(w, resp.Body, resp.ContentLength); err != nil {
+			log.Printf("Error copying response body (copied %d/%d bytes): %v",
+				n, resp.ContentLength, err)
+		}
+		resp.Body.Close()
+	}
 	if resp.StatusCode != http.StatusOK {
 		conn.Close()
 		return nil
@@ -137,11 +164,29 @@ func transfer(ctx context.Context, dst, src net.Conn, wg *sync.WaitGroup) {
 	}
 }
 
-func proxyRequest(w http.ResponseWriter, req *http.Request, transport http.RoundTripper) {
-	resp, err := transport.RoundTrip(req)
+func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
+	// Make a copy of the request body, in case we have to replay it (for authentication)
+	var buf bytes.Buffer
+	n, err := io.Copy(&buf, req.Body)
+	if err != nil {
+		log.Printf("Error copying request body (got %d/%d): %v", n, req.ContentLength, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	rd := bytes.NewReader(buf.Bytes())
+	req.Body = ioutil.NopCloser(rd)
+	resp, err := ph.transport.RoundTrip(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+		_, err = rd.Seek(0, io.SeekStart)
+		if err != nil {
+			log.Printf("Error while seeking to start of request body: %v", err)
+		} else {
+			req.Body = ioutil.NopCloser(rd)
+			resp, err = auth.do(req, ph.transport)
+		}
 	}
 	defer resp.Body.Close()
 	copyResponseHeaders(w, resp)
