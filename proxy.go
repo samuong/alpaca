@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 )
 
 type ProxyHandler struct {
@@ -70,21 +69,19 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	if server == nil {
 		return
 	}
-	defer server.Close()
 	client, _, err := h.Hijack()
 	if err != nil {
-		// The response status has already been sent, so if hijacking
-		// fails, we can't return an error status to the client.
-		// Instead, log the error and finish up.
+		// The response status has already been sent, so if hijacking fails, we can't return
+		// an error status to the client. Instead, log the error and finish up.
 		log.Printf("[%d] Error hijacking connection: %s", req.Context().Value("id"), err)
+		server.Close()
 		return
 	}
-	defer client.Close()
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go transfer(req.Context(), server, client, &wg)
-	go transfer(req.Context(), client, server, &wg)
-	wg.Wait()
+	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
+	// will close the Reader for the other goroutine, forcing any blocked copy to unblock. This
+	// prevents any goroutine from blocking indefinitely (which will leak a file descriptor).
+	go func() { io.Copy(server, client); server.Close() }()
+	go func() { io.Copy(client, server); client.Close() }()
 }
 
 func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string, auth *authenticator) net.Conn {
@@ -154,14 +151,6 @@ func connectToServer(w http.ResponseWriter, req *http.Request) net.Conn {
 	}
 	w.WriteHeader(http.StatusOK)
 	return conn
-}
-
-func transfer(ctx context.Context, dst, src net.Conn, wg *sync.WaitGroup) {
-	defer wg.Done()
-	_, err := io.Copy(dst, src)
-	if err != nil {
-		log.Printf("[%d] Error copying: %v", ctx.Value("id"), err)
-	}
 }
 
 func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {

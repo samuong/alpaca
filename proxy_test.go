@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -186,4 +189,47 @@ func TestDeleteConnectionTokens(t *testing.T) {
 	assert.NotContains(t, header, "X-Alpaca-1")
 	assert.NotContains(t, header, "X-Alpaca-2")
 	assert.Contains(t, header, "X-Alpaca-3")
+}
+
+func TestCloseFromOneSideResultsInEOFOnOtherSide(t *testing.T) {
+	closeConnection := func(conn net.Conn) {
+		conn.Close()
+	}
+	assertEOF := func(conn net.Conn) {
+		_, err := bufio.NewReader(conn).Peek(1)
+		assert.Equal(t, io.EOF, err)
+	}
+	testProxyTunnel(t, closeConnection, assertEOF)
+	testProxyTunnel(t, assertEOF, closeConnection)
+}
+
+func testProxyTunnel(t *testing.T, onServer, onClient func(conn net.Conn)) {
+	// Set up a Listener to act as a server, which we'll connect to via the proxy.
+	server, err := net.Listen("tcp", "localhost:0")
+	require.Nil(t, err)
+	defer server.Close()
+	proxy := httptest.NewServer(newDirectProxy())
+	defer proxy.Close()
+	client, err := net.Dial("tcp", proxy.Listener.Addr().String())
+	require.Nil(t, err)
+	defer client.Close()
+	// The server just accepts a connection and calls the callback.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := server.Accept()
+		require.Nil(t, err)
+		onServer(conn)
+	}()
+	// Connect to the server via the proxy, using a CONNECT request.
+	serverURL := url.URL{Host: server.Addr().String()}
+	req, err := http.NewRequest(http.MethodConnect, serverURL.String(), nil)
+	require.Nil(t, err)
+	require.Nil(t, req.Write(client))
+	resp, err := http.ReadResponse(bufio.NewReader(client), req)
+	require.Nil(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	// Call the client callback, and then make sure that the server is done before finishing.
+	onClient(client)
+	<-done
 }
