@@ -12,6 +12,8 @@ import (
 	"os/user"
 )
 
+var getCredentialsFromKeyring func() (authenticator, bool)
+
 func whoAmI() string {
 	me, err := user.Current()
 	if err != nil {
@@ -41,7 +43,7 @@ func main() {
 		}
 	}
 
-	var password string
+	var a authenticator
 	if *domain != "" {
 		fmt.Printf("Password (for %s\\%s): ", *domain, *username)
 		buf, err := terminal.ReadPassword(int(os.Stdin.Fd()))
@@ -49,7 +51,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error reading password from stdin: %v", err)
 		}
-		password = string(buf)
+		a = authenticator{domain: *domain, username: *username, password: string(buf)}
+	} else if getCredentialsFromKeyring != nil {
+		if tmp, ok := getCredentialsFromKeyring(); ok {
+			a = tmp
+		}
 	}
 
 	var handler ProxyHandler
@@ -66,7 +72,7 @@ func main() {
 		pf := NewProxyFinder(pacURL)
 		handler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
 			return pf.findProxyForRequest(req)
-		}, &authenticator{*domain, *username, password})
+		}, &a)
 	}
 
 	s := &http.Server{
