@@ -12,7 +12,7 @@ import (
 	"os/user"
 )
 
-var getCredentialsFromKeyring func() (authenticator, bool)
+var getCredentialsFromKeyring func() (authenticator, error)
 
 func whoAmI() string {
 	me, err := user.Current()
@@ -53,7 +53,10 @@ func main() {
 		}
 		a = authenticator{domain: *domain, username: *username, password: string(buf)}
 	} else if getCredentialsFromKeyring != nil {
-		if tmp, ok := getCredentialsFromKeyring(); ok {
+		tmp, err := getCredentialsFromKeyring()
+		if err != nil {
+			log.Println(err)
+		} else {
 			a = tmp
 		}
 	}
