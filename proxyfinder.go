@@ -7,18 +7,24 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 )
 
 // The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
 // which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
 // client that goes directly to the server, rather than via a proxy.
-var noProxyClient = &http.Client{Transport: &http.Transport{Proxy: nil}}
+var noProxyClient = &http.Client{
+	Transport: &http.Transport{Proxy: nil},
+	Timeout:   30 * time.Second,
+}
 
 type ProxyFinder struct {
 	pacURL     string
 	pacRunner  *PACRunner
 	netMonitor *NetMonitor
 	online     bool
+	lock       sync.Mutex
 }
 
 func NewProxyFinder(pacURL string) *ProxyFinder {
@@ -32,10 +38,11 @@ func newProxyFinder(pacURL string, getAddrs addressProvider) *ProxyFinder {
 }
 
 func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) {
-	// TODO: this is probably not thread-safe; put a lock around it
+	pf.lock.Lock()
 	if pf.netMonitor.AddrsChanged() {
 		pf.downloadPACFile()
 	}
+	pf.lock.Unlock()
 	if !pf.online {
 		return nil, nil
 	}
