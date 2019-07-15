@@ -18,7 +18,7 @@ func readDefaultForNoMAD(key string) (string, error) {
 	cmd := execCommand("defaults", "read", "com.trusourcelabs.NoMAD", key)
 	out, err := cmd.Output()
 	if err != nil {
-		return "", errors.New("NoMAD configuration key not found")
+		return "", errors.New("NoMAD configuration key not found.")
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -53,7 +53,7 @@ func getCredentialsFromNoMAD() (authenticator, error) {
 	}
 	substrs := strings.Split(userPrincipal, "@")
 	if len(substrs) != 2 {
-		return authenticator{}, errors.New("Couldn't retrieve AD domain and username from NoMAD")
+		return authenticator{}, errors.New("Couldn't retrieve AD domain and username from NoMAD.")
 	}
 	user, domain := substrs[0], substrs[1]
 	password := readPasswordFromKeychain(userPrincipal)

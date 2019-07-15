@@ -55,8 +55,10 @@ func main() {
 	} else if getCredentialsFromKeyring != nil {
 		tmp, err := getCredentialsFromKeyring()
 		if err != nil {
-			log.Println(err)
+			log.Printf("%v Disabling proxy authentication.\n", err)
 		} else {
+			log.Printf("Found NoMAD credentails for %s\\%s in system keychain\n",
+				a.domain, a.username)
 			a = tmp
 		}
 	}
