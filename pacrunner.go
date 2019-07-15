@@ -16,8 +16,8 @@ import (
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file
 
 type PACRunner struct {
-	vm  *otto.Otto
-	mux sync.Mutex
+	vm *otto.Otto
+	sync.Mutex
 }
 
 func NewPACRunner(r io.Reader) (*PACRunner, error) {
@@ -59,8 +59,8 @@ func NewPACRunner(r io.Reader) (*PACRunner, error) {
 }
 
 func (pr *PACRunner) FindProxyForURL(u *url.URL) (string, error) {
-	pr.mux.Lock()
-	defer pr.mux.Unlock()
+	pr.Lock()
+	defer pr.Unlock()
 	if u.Scheme == "https" || u.Scheme == "wss" {
 		// Strip the path and query components of https:// URLs.
 		// https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file#Parameters
