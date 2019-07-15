@@ -48,14 +48,15 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 		pf.downloadPACFile()
 	}
 	pf.lock.Unlock()
+	id := req.Context().Value("id")
 	if !pf.online {
+		log.Printf(`[%d] %s %s via "DIRECT"`, id, req.Method, req.URL)
 		return nil, nil
 	}
 	s, err := pf.pacRunner.FindProxyForURL(req.URL)
 	if err != nil {
 		return nil, err
 	}
-	id := req.Context().Value("id")
 	log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, s)
 	ss := strings.Split(s, ";")
 	if len(ss) > 1 {
