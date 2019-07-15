@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github.com/gobwas/glob"
 	"github.com/robertkrimen/otto"
-	"io"
 	"net"
 	"net/url"
 	"strings"
@@ -20,7 +19,7 @@ type PACRunner struct {
 	sync.Mutex
 }
 
-func NewPACRunner(r io.Reader) (*PACRunner, error) {
+func (pr *PACRunner) Update(pacjs []byte) error {
 	vm := otto.New()
 	var err error
 	set := func(name string, handler func(otto.FunctionCall) otto.Value) {
@@ -49,13 +48,14 @@ func NewPACRunner(r io.Reader) (*PACRunner, error) {
 		return timeRange(fc, time.Now())
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	_, err = vm.Run(r)
+	_, err = vm.Run(pacjs)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return &PACRunner{vm: vm}, nil
+	pr.vm = vm
+	return nil
 }
 
 func (pr *PACRunner) FindProxyForURL(u *url.URL) (string, error) {

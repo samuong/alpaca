@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/robertkrimen/otto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,32 +11,36 @@ import (
 	"time"
 )
 
-func newPACRunner(t *testing.T, expr string) *PACRunner {
-	pr, err := NewPACRunner(strings.NewReader(fmt.Sprintf(
-		"function FindProxyForURL(url, host) { return %s }", expr)))
-	require.Nil(t, err)
-	return pr
-}
-
-func checkProxy(t *testing.T, pr *PACRunner, addr, expected string) {
-	u, err := url.Parse(addr)
-	require.Nil(t, err)
-	proxy, err := pr.FindProxyForURL(u)
-	require.Nil(t, err)
-	assert.Equal(t, expected, proxy)
-}
-
 func TestDirect(t *testing.T) {
-	pr := newPACRunner(t, `"DIRECT"`)
-	checkProxy(t, pr, "https://anz.com", "DIRECT")
+	var pr PACRunner
+	pacjs := []byte(`function FindProxyForURL(url, host) { return "DIRECT" }`)
+	require.Nil(t, pr.Update(pacjs))
+	proxy, err := pr.FindProxyForURL(&url.URL{Scheme: "https", Host: "anz.com"})
+	require.Nil(t, err)
+	assert.Equal(t, "DIRECT", proxy)
 }
 
 func TestPathAndQueryStripping(t *testing.T) {
-	pr := newPACRunner(t, "url")
-	checkProxy(t, pr, "http://anz.com/path?secret=abc123", "http://anz.com/path?secret=abc123")
-	checkProxy(t, pr, "https://anz.com/path?secret=abc123", "https://anz.com")
-	checkProxy(t, pr, "wss://anz.com/websocket", "wss://anz.com")
-	checkProxy(t, pr, "https://anz.com/#fragment", "https://anz.com")
+	tests := []struct {
+		name, input, expected string
+	}{
+		{"http", "http://anz.com/path?secret=abc123", "http://anz.com/path?secret=abc123"},
+		{"https with path and query", "https://anz.com/path?secret=123", "https://anz.com"},
+		{"wss with path", "wss://anz.com/websocket", "wss://anz.com"},
+		{"https with fragment", "https://anz.com/#fragment", "https://anz.com"},
+	}
+	for _, test := range tests {
+		var pr PACRunner
+		pacjs := []byte("function FindProxyForURL(url, host) { return url }")
+		require.Nil(t, pr.Update(pacjs))
+		t.Run(test.name, func(t *testing.T) {
+			u, err := url.Parse(test.input)
+			require.Nil(t, err)
+			proxy, err := pr.FindProxyForURL(u)
+			require.Nil(t, err)
+			assert.Equal(t, test.expected, proxy)
+		})
+	}
 }
 
 func TestIsPlainHostName(t *testing.T) {

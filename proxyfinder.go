@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -10,6 +12,9 @@ import (
 	"sync"
 	"time"
 )
+
+// The maximum size (in bytes) allowed for a PAC script. This matches the limit in Chrome.
+const maxResponseBytes = 1 * 1024 * 1024
 
 // The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
 // which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
@@ -21,7 +26,7 @@ var noProxyClient = &http.Client{
 
 type ProxyFinder struct {
 	pacURL     string
-	pacRunner  *PACRunner
+	pacRunner  PACRunner
 	netMonitor *NetMonitor
 	online     bool
 	lock       sync.Mutex
@@ -94,9 +99,14 @@ func (pf *ProxyFinder) downloadPACFile() {
 		pf.online = false
 		return
 	}
-	pf.pacRunner, err = NewPACRunner(resp.Body)
-	if err != nil {
-		log.Printf("Error creating new PAC runner: %q\n", err)
+	var buf bytes.Buffer
+	if _, err := io.CopyN(&buf, resp.Body, maxResponseBytes); err != nil && err != io.EOF {
+		log.Printf("Error reading PAC JS from response body: %q\n", err)
+		pf.online = false
+		return
+	}
+	if err := pf.pacRunner.Update(buf.Bytes()); err != nil {
+		log.Printf("Error running PAC JS: %q\n", err)
 		pf.online = false
 		return
 	}
