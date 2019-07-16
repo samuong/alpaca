@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -38,14 +40,14 @@ func NewProxyFinder(pacURL string) *ProxyFinder {
 
 func newProxyFinder(pacURL string, getAddrs addressProvider) *ProxyFinder {
 	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs)}
-	pf.downloadPACFile()
+	pf.loadPAC()
 	return pf
 }
 
 func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) {
 	pf.lock.Lock()
 	if pf.netMonitor.AddrsChanged() {
-		pf.downloadPACFile()
+		pf.loadPAC()
 	}
 	pf.lock.Unlock()
 	id := req.Context().Value("id")
@@ -113,4 +115,34 @@ func (pf *ProxyFinder) downloadPACFile() {
 	}
 	pf.online = true
 	return
+}
+
+func (pf *ProxyFinder) openPACFile() {
+	var re = regexp.MustCompile("^file://")
+	var filePath = re.ReplaceAllString(pf.pacURL, "")
+	log.Printf("Loading PAC JS from File: %s ", filePath)
+
+	buf, err := ioutil.ReadFile(filePath)
+
+	if err != nil {
+		log.Printf("Error reading PAC JS from file: %q\n", err)
+		pf.online = false
+		return
+	}
+
+	if err := pf.pacRunner.Update(buf); err != nil {
+		log.Printf("Error running PAC JS: %q\n", err)
+		pf.online = false
+		return
+	}
+	pf.online = true
+	return
+}
+
+func (pf *ProxyFinder) loadPAC() {
+	if strings.HasPrefix(pf.pacURL, "file") {
+		pf.openPACFile()
+	} else {
+		pf.downloadPACFile()
+	}
 }
