@@ -3,14 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type proxyFinderTestServer struct {
@@ -71,4 +75,28 @@ func TestProxyWithoutPort(t *testing.T) {
 	defer pacServer.Close()
 	pf := newProxyFinder(pacServer.URL, net.InterfaceAddrs)
 	checkProxyForURL(t, pf, "https://www.anz.com.au/", &url.URL{Host: "proxy.anz.com:80"})
+}
+
+func TestPacFromFilesystem(t *testing.T) {
+	//s := &proxyFinderTestServer{toAddrs("10.0.0.1"), "proxy.anz.com"}
+
+	content := []byte("function FindProxyForURL(url, host) { return \"PROXY proxy.example.com:80\"}")
+	tmpfile, err := ioutil.TempFile("", "test.pac")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write(content); err != nil {
+		log.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		log.Fatal(err)
+	}
+
+	pacLocation := fmt.Sprintf("file://%s", tmpfile.Name())
+
+	pf := newProxyFinder(pacLocation, net.InterfaceAddrs)
+	checkProxyForURL(t, pf, "https://www.anz.com.au/", &url.URL{Host: "proxy.example.com:80"})
 }

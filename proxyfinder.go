@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -18,20 +16,16 @@ import (
 // The maximum size (in bytes) allowed for a PAC script. This matches the limit in Chrome.
 const maxResponseBytes = 1 * 1024 * 1024
 
-// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
-// which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
-// client that goes directly to the server, rather than via a proxy.
-var noProxyClient = &http.Client{
-	Transport: &http.Transport{Proxy: nil},
-	Timeout:   30 * time.Second,
-}
-
 type ProxyFinder struct {
 	pacURL     string
 	pacRunner  PACRunner
 	netMonitor *NetMonitor
 	online     bool
 	lock       sync.Mutex
+	// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
+	// which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
+	// client that goes directly to the server, rather than via a proxy.
+	noProxyClient *http.Client
 }
 
 func NewProxyFinder(pacURL string) *ProxyFinder {
@@ -39,15 +33,21 @@ func NewProxyFinder(pacURL string) *ProxyFinder {
 }
 
 func newProxyFinder(pacURL string, getAddrs addressProvider) *ProxyFinder {
-	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs)}
-	pf.loadPAC()
+	transport := &http.Transport{Proxy: nil}
+	transport.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
+	noProxyClient := &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}
+	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs), noProxyClient: noProxyClient}
+	pf.downloadPACFile()
 	return pf
 }
 
 func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) {
 	pf.lock.Lock()
 	if pf.netMonitor.AddrsChanged() {
-		pf.loadPAC()
+		pf.downloadPACFile()
 	}
 	pf.lock.Unlock()
 	id := req.Context().Value("id")
@@ -90,7 +90,11 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 }
 
 func (pf *ProxyFinder) downloadPACFile() {
-	resp, err := noProxyClient.Get(pf.pacURL)
+	if strings.HasPrefix(pf.pacURL, "file") {
+		log.Printf("Warning: The PAC URL is served over file://, which is supported by Alpaca, but not by Windows and macOS. Be careful if you configure your system settings to use the same file:// URL, it may not work.")
+	}
+
+	resp, err := pf.noProxyClient.Get(pf.pacURL)
 	if err != nil {
 		log.Printf("Error downloading PAC file: %q\n", err)
 		pf.online = false
@@ -115,34 +119,4 @@ func (pf *ProxyFinder) downloadPACFile() {
 	}
 	pf.online = true
 	return
-}
-
-func (pf *ProxyFinder) openPACFile() {
-	var re = regexp.MustCompile("^file://")
-	var filePath = re.ReplaceAllString(pf.pacURL, "")
-	log.Printf("Loading PAC JS from File: %s ", filePath)
-
-	buf, err := ioutil.ReadFile(filePath)
-
-	if err != nil {
-		log.Printf("Error reading PAC JS from file: %q\n", err)
-		pf.online = false
-		return
-	}
-
-	if err := pf.pacRunner.Update(buf); err != nil {
-		log.Printf("Error running PAC JS: %q\n", err)
-		pf.online = false
-		return
-	}
-	pf.online = true
-	return
-}
-
-func (pf *ProxyFinder) loadPAC() {
-	if strings.HasPrefix(pf.pacURL, "file") {
-		pf.openPACFile()
-	} else {
-		pf.downloadPACFile()
-	}
 }
