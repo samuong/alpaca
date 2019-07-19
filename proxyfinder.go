@@ -17,29 +17,31 @@ import (
 const maxResponseBytes = 1 * 1024 * 1024
 
 type ProxyFinder struct {
-	pacURL     string
-	pacRunner  PACRunner
-	netMonitor *NetMonitor
-	online     bool
-	lock       sync.Mutex
-	// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
-	// which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
-	// client that goes directly to the server, rather than via a proxy.
-	noProxyClient *http.Client
+	pacURL          string
+	offlineCheckURL string
+	pacRunner       PACRunner
+	netMonitor      *NetMonitor
+	online          bool
+	lock            sync.Mutex
+	client          *http.Client
 }
 
 func NewProxyFinder(pacURL string) *ProxyFinder {
-	return newProxyFinder(pacURL, net.InterfaceAddrs)
+	return newProxyFinder(pacURL, "https://google.com", net.InterfaceAddrs)
 }
 
-func newProxyFinder(pacURL string, getAddrs addressProvider) *ProxyFinder {
+func newProxyFinder(pacURL string, offlineCheckURL string, getAddrs addressProvider) *ProxyFinder {
+	// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
+	// which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
+	// client that goes directly to the server, rather than via a proxy.
+	// This is also needed to detirmine online / offline status if we are using a pac file served from file://
 	transport := &http.Transport{Proxy: nil}
 	transport.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
-	noProxyClient := &http.Client{
+	client := &http.Client{
 		Transport: transport,
 		Timeout:   30 * time.Second,
 	}
-	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs), noProxyClient: noProxyClient}
+	pf := &ProxyFinder{pacURL: pacURL, offlineCheckURL: offlineCheckURL, netMonitor: NewNetMonitor(getAddrs), client: client}
 	pf.downloadPACFile()
 	return pf
 }
@@ -90,11 +92,8 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 }
 
 func (pf *ProxyFinder) downloadPACFile() {
-	if strings.HasPrefix(pf.pacURL, "file") {
-		log.Printf("Warning: The PAC URL is served over file://, which is supported by Alpaca, but not by Windows and macOS. Be careful if you configure your system settings to use the same file:// URL, it may not work.")
-	}
 
-	resp, err := pf.noProxyClient.Get(pf.pacURL)
+	resp, err := pf.client.Get(pf.pacURL)
 	if err != nil {
 		log.Printf("Error downloading PAC file: %q\n", err)
 		pf.online = false
@@ -117,6 +116,20 @@ func (pf *ProxyFinder) downloadPACFile() {
 		pf.online = false
 		return
 	}
+
+	if strings.HasPrefix(pf.pacURL, "file:") {
+		log.Printf("Warning: The PAC URL is served over file://, which is supported by Alpaca, but not by Windows and macOS. Be careful if you configure your system settings to use the same file:// URL, it may not work.")
+		// When using a local PAC file the online/offline status can't be detirmined by the fact the PAC file is returned
+		// Instead try a direct request to an internet URL
+		offlineResp, err := pf.client.Get(pf.offlineCheckURL)
+		if err == nil && offlineResp.StatusCode == 200 {
+			log.Printf("%s is directly accessible, bypassing proxy\n", pf.offlineCheckURL)
+			pf.online = false
+			return
+		}
+		defer offlineResp.Body.Close()
+	}
+
 	pf.online = true
 	return
 }
