@@ -123,11 +123,11 @@ func (pf *ProxyFinder) downloadPACFile() {
 		// Instead try a direct request to an internet URL
 		offlineResp, err := pf.client.Get(pf.offlineCheckURL)
 		if err == nil && offlineResp.StatusCode == 200 {
+			defer offlineResp.Body.Close()
 			log.Printf("%s is directly accessible, bypassing proxy\n", pf.offlineCheckURL)
 			pf.online = false
 			return
 		}
-		defer offlineResp.Body.Close()
 	}
 
 	pf.online = true
