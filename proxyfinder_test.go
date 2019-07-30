@@ -77,7 +77,7 @@ func TestProxyFinder(t *testing.T) {
 	s := &proxyFinderTestServer{toAddrs("127.0.0.1"), "proxy.anz.com:8080"}
 	pacServer := httptest.NewServer(s)
 	defer pacServer.Close()
-	pf := newProxyFinder(pacServer.URL, "", func() ([]net.Addr, error) { return s.addrs, nil })
+	pf := newProxyFinder(pacServer.URL, func() ([]net.Addr, error) { return s.addrs, nil })
 	checkProxyForURL(t, pf, "https://www.anz.com.au/personal/", nil)
 	// Connect to a corporate WiFi, and get a 10.0.0.0/8 address.
 	s.addrs = toAddrs("127.0.0.1", "10.20.30.40")
@@ -95,7 +95,7 @@ func TestProxyWithoutPort(t *testing.T) {
 	s := &proxyFinderTestServer{toAddrs("10.0.0.1"), "proxy.anz.com"}
 	pacServer := httptest.NewServer(s)
 	defer pacServer.Close()
-	pf := newProxyFinder(pacServer.URL, "", net.InterfaceAddrs)
+	pf := newProxyFinder(pacServer.URL, net.InterfaceAddrs)
 	checkProxyForURL(t, pf, "https://www.anz.com.au/", &url.URL{Host: "proxy.anz.com:80"})
 }
 
@@ -111,20 +111,6 @@ func TestPacFromFilesystem(t *testing.T) {
 	require.Nil(t, err)
 	require.Nil(t, tmpfile.Close())
 	pacLocation := fmt.Sprintf("file://%s", tmpfile.Name())
-
-	s := &onlineCheckServer{toAddrs("127.0.0.1")}
-	onlineCheckServer := httptest.NewServer(s)
-	defer onlineCheckServer.Close()
-	// Initially, we're not on the network, and only have a loopback address.
-	pf := newProxyFinder(pacLocation, onlineCheckServer.URL, func() ([]net.Addr, error) { return s.addrs, nil })
-	checkProxyForURL(t, pf, "https://www.anz.com.au/", nil)
-	// Connect to a corporate WiFi, and get a 10.0.0.0/8 address.
-	s.addrs = toAddrs("127.0.0.1", "10.20.30.40")
-	checkProxyForURL(t, pf, "https://www.anz.com.au/personal/", proxy)
-	// Tether, and get a 192.168.0.0/16 address.
-	s.addrs = toAddrs("127.0.0.1", "192.168.1.2")
-	checkProxyForURL(t, pf, "https://www.anz.com.au/personal/", nil)
-	// Get back on the corporate WiFi.
-	s.addrs = toAddrs("127.0.0.1", "10.20.30.40")
+	pf := newProxyFinder(pacLocation, net.InterfaceAddrs)
 	checkProxyForURL(t, pf, "https://www.anz.com.au/personal/", proxy)
 }
