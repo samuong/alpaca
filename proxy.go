@@ -168,16 +168,22 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		_, err = rd.Seek(0, io.SeekStart)
 		if err != nil {
 			log.Printf("Error while seeking to start of request body: %v", err)
 		} else {
 			req.Body = ioutil.NopCloser(rd)
 			resp, err = auth.do(req, ph.transport)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			defer resp.Body.Close()
 		}
 	}
-	defer resp.Body.Close()
 	copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)

@@ -58,7 +58,7 @@ func main() {
 			log.Printf("%v Disabling proxy authentication.\n", err)
 		} else {
 			log.Printf("Found NoMAD credentails for %s\\%s in system keychain\n",
-				a.domain, a.username)
+				tmp.domain, tmp.username)
 			a = tmp
 		}
 	}
