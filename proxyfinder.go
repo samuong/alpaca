@@ -24,13 +24,14 @@ type ProxyFinder struct {
 	online     bool
 	lock       sync.Mutex
 	client     *http.Client
+	lookupAddr func(context.Context, string) ([]string, error)
 }
 
 func NewProxyFinder(pacURL string) *ProxyFinder {
-	return newProxyFinder(pacURL, net.InterfaceAddrs)
+	return newProxyFinder(pacURL, net.InterfaceAddrs, net.DefaultResolver.LookupAddr)
 }
 
-func newProxyFinder(pacURL string, getAddrs addressProvider) *ProxyFinder {
+func newProxyFinder(pacURL string, getAddrs addressProvider, lookupAddr func(context.Context, string) ([]string, error)) *ProxyFinder {
 	// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
 	// which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
 	// client that goes directly to the server, rather than via a proxy.
@@ -42,7 +43,7 @@ func newProxyFinder(pacURL string, getAddrs addressProvider) *ProxyFinder {
 		// The DefaultClient in net/http uses....
 		client.Transport = &http.Transport{Proxy: nil}
 	}
-	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs), client: client}
+	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs), client: client, lookupAddr: lookupAddr}
 	pf.downloadPACFile()
 	return pf
 }
@@ -124,9 +125,9 @@ func (pf *ProxyFinder) downloadPACFile() {
 		const timeout = 2 * time.Second
 		ctx, cancel := context.WithTimeout(context.TODO(), timeout)
 		defer cancel() // important to avoid a resource leak
-		var r net.Resolver
-		_, err1 := r.LookupAddr(ctx, "8.8.8.8")
-		_, err2 := r.LookupAddr(ctx, "2001:4860:4860::8888")
+
+		_, err1 := pf.lookupAddr(ctx, "8.8.8.8")
+		_, err2 := pf.lookupAddr(ctx, "2001:4860:4860::8888")
 		if err1 == nil || err2 == nil {
 			log.Printf("Successfully resolved internet DNS address.  Bypassing proxy")
 			pf.online = false
