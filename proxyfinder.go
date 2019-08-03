@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -16,28 +17,33 @@ import (
 // The maximum size (in bytes) allowed for a PAC script. This matches the limit in Chrome.
 const maxResponseBytes = 1 * 1024 * 1024
 
-// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
-// which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
-// client that goes directly to the server, rather than via a proxy.
-var noProxyClient = &http.Client{
-	Transport: &http.Transport{Proxy: nil},
-	Timeout:   30 * time.Second,
-}
-
 type ProxyFinder struct {
 	pacURL     string
 	pacRunner  PACRunner
 	netMonitor *NetMonitor
 	online     bool
 	lock       sync.Mutex
+	client     *http.Client
+	lookupAddr func(context.Context, string) ([]string, error)
 }
 
 func NewProxyFinder(pacURL string) *ProxyFinder {
-	return newProxyFinder(pacURL, net.InterfaceAddrs)
+	return newProxyFinder(pacURL, net.InterfaceAddrs, net.DefaultResolver.LookupAddr)
 }
 
-func newProxyFinder(pacURL string, getAddrs addressProvider) *ProxyFinder {
-	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs)}
+func newProxyFinder(pacURL string, getAddrs addressProvider, lookupAddr func(context.Context, string) ([]string, error)) *ProxyFinder {
+	// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
+	// which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
+	// client that goes directly to the server, rather than via a proxy.
+	client := &http.Client{Timeout: 30 * time.Second}
+	if strings.HasPrefix(pacURL, "file:") {
+		log.Printf("Warning: The PAC URL is served over file://, which is supported by Alpaca, but not by Windows and macOS. Be careful if you configure your system settings to use the same file:// URL, it may not work.")
+		client.Transport = http.NewFileTransport(http.Dir("/"))
+	} else {
+		// The DefaultClient in net/http uses....
+		client.Transport = &http.Transport{Proxy: nil}
+	}
+	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs), client: client, lookupAddr: lookupAddr}
 	pf.downloadPACFile()
 	return pf
 }
@@ -88,7 +94,8 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 }
 
 func (pf *ProxyFinder) downloadPACFile() {
-	resp, err := noProxyClient.Get(pf.pacURL)
+
+	resp, err := pf.client.Get(pf.pacURL)
 	if err != nil {
 		log.Printf("Error downloading PAC file: %q\n", err)
 		pf.online = false
@@ -111,6 +118,23 @@ func (pf *ProxyFinder) downloadPACFile() {
 		pf.online = false
 		return
 	}
+
+	if strings.HasPrefix(pf.pacURL, "file:") {
+		// When using a local PAC file the online/offline status can't be detirmined by the fact the PAC file is returned
+		// Instead try reverse DNS resolution of an internet address
+		const timeout = 2 * time.Second
+		ctx, cancel := context.WithTimeout(context.TODO(), timeout)
+		defer cancel() // important to avoid a resource leak
+
+		_, err1 := pf.lookupAddr(ctx, "8.8.8.8")
+		_, err2 := pf.lookupAddr(ctx, "2001:4860:4860::8888")
+		if err1 == nil || err2 == nil {
+			log.Printf("Successfully resolved internet DNS address.  Bypassing proxy")
+			pf.online = false
+			return
+		}
+	}
+
 	pf.online = true
 	return
 }
