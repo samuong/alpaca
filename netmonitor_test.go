@@ -27,25 +27,26 @@ func toAddrs(ss ...string) []net.Addr {
 
 func TestNetworkMonitor(t *testing.T) {
 	var next []net.Addr
-	nm := NewNetMonitor(func() ([]net.Addr, error) { return next, nil })
+	nm := &netMonitorImpl{getAddrs: func() ([]net.Addr, error) { return next, nil }}
 	// Start with just loopback interfaces
 	next = toAddrs("127.0.0.1/8", "::1/128")
-	assert.True(t, nm.AddrsChanged())
+	assert.True(t, nm.addrsChanged())
 	// Connect to network, and get local IPv4 and IPv6 addresses
 	next = toAddrs("127.0.0.1/8", "192.168.1.6/24", "::1/128", "fe80::dfd9:fe1d:56d1:1f3a/64")
-	assert.True(t, nm.AddrsChanged())
+	assert.True(t, nm.addrsChanged())
 	// Stay connected, nothing changed
 	next = toAddrs("127.0.0.1/8", "192.168.1.6/24", "::1/128", "fe80::dfd9:fe1d:56d1:1f3a/64")
-	assert.False(t, nm.AddrsChanged())
+	assert.False(t, nm.addrsChanged())
 	// DHCP lease expires, get new addresses
 	next = toAddrs("127.0.0.1/8", "192.168.1.7/24", "::1/128", "fe80::dfd9:fe1d:56d1:1f3b/64")
-	assert.True(t, nm.AddrsChanged())
+	assert.True(t, nm.addrsChanged())
 	// Disconnect, and go back to having just loopback addresses
 	next = toAddrs("127.0.0.1/8", "::1/128")
-	assert.True(t, nm.AddrsChanged())
+	assert.True(t, nm.addrsChanged())
 }
 
 func TestFailToGetAddrs(t *testing.T) {
-	nm := NewNetMonitor(func() ([]net.Addr, error) { return nil, errors.New("failed") })
-	assert.False(t, nm.AddrsChanged())
+	alwaysFail := func() ([]net.Addr, error) { return nil, errors.New("failed") }
+	nm := &netMonitorImpl{getAddrs: alwaysFail}
+	assert.False(t, nm.addrsChanged())
 }

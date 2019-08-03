@@ -5,18 +5,20 @@ import (
 	"net"
 )
 
-type NetMonitor struct {
+type netMonitor interface {
+	addrsChanged() bool
+}
+
+type netMonitorImpl struct {
 	addrs    map[string]struct{}
-	getAddrs addressProvider
+	getAddrs func() ([]net.Addr, error)
 }
 
-type addressProvider func() ([]net.Addr, error)
-
-func NewNetMonitor(getAddrs addressProvider) *NetMonitor {
-	return &NetMonitor{make(map[string]struct{}), getAddrs}
+func newNetMonitor() *netMonitorImpl {
+	return &netMonitorImpl{getAddrs: net.InterfaceAddrs}
 }
 
-func (nm *NetMonitor) AddrsChanged() bool {
+func (nm *netMonitorImpl) addrsChanged() bool {
 	addrs, err := nm.getAddrs()
 	if err != nil {
 		log.Printf("Error while getting network interface addresses: %q\n", err)

@@ -1,65 +1,48 @@
 package main
 
 import (
-	"bytes"
-	"context"
+	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
-	"time"
 )
 
-// The maximum size (in bytes) allowed for a PAC script. This matches the limit in Chrome.
-const maxResponseBytes = 1 * 1024 * 1024
-
 type ProxyFinder struct {
-	pacURL     string
-	pacRunner  PACRunner
-	netMonitor *NetMonitor
-	online     bool
-	lock       sync.Mutex
-	client     *http.Client
-	lookupAddr func(context.Context, string) ([]string, error)
+	runner  *PACRunner
+	fetcher *pacFetcher
+	sync.Mutex
 }
 
-func NewProxyFinder(pacURL string) *ProxyFinder {
-	return newProxyFinder(pacURL, net.InterfaceAddrs, net.DefaultResolver.LookupAddr)
-}
-
-func newProxyFinder(pacURL string, getAddrs addressProvider, lookupAddr func(context.Context, string) ([]string, error)) *ProxyFinder {
-	// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy environment variable,
-	// which could be pointing at this instance of alpaca. When fetching the PAC file, we always use a
-	// client that goes directly to the server, rather than via a proxy.
-	client := &http.Client{Timeout: 30 * time.Second}
-	if strings.HasPrefix(pacURL, "file:") {
-		log.Printf("Warning: The PAC URL is served over file://, which is supported by Alpaca, but not by Windows and macOS. Be careful if you configure your system settings to use the same file:// URL, it may not work.")
-		client.Transport = http.NewFileTransport(http.Dir("/"))
-	} else {
-		// The DefaultClient in net/http uses....
-		client.Transport = &http.Transport{Proxy: nil}
-	}
-	pf := &ProxyFinder{pacURL: pacURL, netMonitor: NewNetMonitor(getAddrs), client: client, lookupAddr: lookupAddr}
-	pf.downloadPACFile()
+func NewProxyFinder(pacurl string) *ProxyFinder {
+	pf := &ProxyFinder{runner: new(PACRunner), fetcher: newPACFetcher(pacurl)}
+	pf.checkForUpdates()
 	return pf
 }
 
-func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) {
-	pf.lock.Lock()
-	if pf.netMonitor.AddrsChanged() {
-		pf.downloadPACFile()
+func (pf *ProxyFinder) checkForUpdates() {
+	pf.Lock()
+	defer pf.Unlock()
+	var pacjs []byte
+	pacjs = pf.fetcher.download()
+	if pacjs == nil {
+		return
 	}
-	pf.lock.Unlock()
-	id := req.Context().Value("id")
-	if !pf.online {
-		log.Printf(`[%d] %s %s via "DIRECT"`, id, req.Method, req.URL)
+	if err := pf.runner.Update(pacjs); err != nil {
+		log.Printf("Error running PAC JS: %q\n", err)
+	}
+}
+
+func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) {
+	pf.checkForUpdates()
+	if !pf.fetcher.isConnected() {
 		return nil, nil
 	}
-	s, err := pf.pacRunner.FindProxyForURL(req.URL)
+	id := req.Context().Value("id")
+	s, err := pf.runner.FindProxyForURL(req.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -84,57 +67,9 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 		}
 		return proxy, nil
 	}
-	n, err = fmt.Sscanf(trimmed, "SOCKS %s", &host)
-	if err == nil && n == 1 {
-		log.Printf("[%d] Warning: ignoring SOCKS proxy %q", id, host)
-		return nil, nil
+	if strings.HasPrefix(trimmed, "SOCKS ") {
+		return nil, errors.New("Alpaca does not yet support SOCKS proxies")
+	} else {
+		return nil, errors.New("Couldn't parse PAC response")
 	}
-	log.Printf("[%d] Couldn't parse PAC response %q", id, s)
-	return nil, err
-}
-
-func (pf *ProxyFinder) downloadPACFile() {
-
-	resp, err := pf.client.Get(pf.pacURL)
-	if err != nil {
-		log.Printf("Error downloading PAC file: %q\n", err)
-		pf.online = false
-		return
-	}
-	defer resp.Body.Close()
-	log.Printf("GET %q returned %q\n", pf.pacURL, resp.Status)
-	if resp.StatusCode != http.StatusOK {
-		pf.online = false
-		return
-	}
-	var buf bytes.Buffer
-	if _, err := io.CopyN(&buf, resp.Body, maxResponseBytes); err != nil && err != io.EOF {
-		log.Printf("Error reading PAC JS from response body: %q\n", err)
-		pf.online = false
-		return
-	}
-	if err := pf.pacRunner.Update(buf.Bytes()); err != nil {
-		log.Printf("Error running PAC JS: %q\n", err)
-		pf.online = false
-		return
-	}
-
-	if strings.HasPrefix(pf.pacURL, "file:") {
-		// When using a local PAC file the online/offline status can't be detirmined by the fact the PAC file is returned
-		// Instead try reverse DNS resolution of an internet address
-		const timeout = 2 * time.Second
-		ctx, cancel := context.WithTimeout(context.TODO(), timeout)
-		defer cancel() // important to avoid a resource leak
-
-		_, err1 := pf.lookupAddr(ctx, "8.8.8.8")
-		_, err2 := pf.lookupAddr(ctx, "2001:4860:4860::8888")
-		if err1 == nil || err2 == nil {
-			log.Printf("Successfully resolved internet DNS address.  Bypassing proxy")
-			pf.online = false
-			return
-		}
-	}
-
-	pf.online = true
-	return
 }
