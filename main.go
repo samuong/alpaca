@@ -4,12 +4,13 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"golang.org/x/crypto/ssh/terminal"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"os/user"
+
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var getCredentialsFromKeyring func() (authenticator, error)
@@ -63,10 +64,10 @@ func main() {
 		}
 	}
 
-	var handler ProxyHandler
+	var proxyHandler ProxyHandler
 	if len(pacURL) == 0 {
 		log.Println("No PAC URL specified or detected; all requests will be made directly")
-		handler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
+		proxyHandler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
 			log.Printf(`[%d] %s %s via "DIRECT"`,
 				req.Context().Value("id"), req.Method, req.URL)
 			return nil, nil
@@ -75,15 +76,16 @@ func main() {
 		log.Fatalf("Couldn't find a valid PAC URL: %v", pacURL)
 	} else {
 		pf := NewProxyFinder(pacURL)
-		handler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
+		proxyHandler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
 			return pf.findProxyForRequest(req)
 		}, &a)
 	}
 
+	mux := http.NewServeMux()
 	s := &http.Server{
 		// Set the addr to localhost so that we only listen locally.
 		Addr:    fmt.Sprintf("localhost:%d", *port),
-		Handler: AddContextID(handler),
+		Handler: AddContextID(proxyHandler.WrapHandler(mux)),
 		// TODO: Implement HTTP/2 support. In the meantime, set TLSNextProto to a non-nil
 		// value to disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),

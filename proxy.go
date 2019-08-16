@@ -24,6 +24,23 @@ func NewProxyHandler(proxy proxyFunc, auth *authenticator) ProxyHandler {
 	return ProxyHandler{&http.Transport{Proxy: proxy}, auth}
 }
 
+func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Pass CONNECT requests and absolute-form URIs to the ProxyHandler.
+		// If the request URL has a scheme, it is an absolute-form URI
+		// (RFC 7230 Section 5.3.2).
+		if req.Method == http.MethodConnect || req.URL.Scheme != "" {
+			ph.ServeHTTP(w, req)
+			return
+		}
+		// The request URI is an origin-form or asterisk-form target which we
+		// handle as an origin server (RFC 7230 5.3). authority-form URIs
+		// are only for CONNECT, which has already been dispatched to the
+		// ProxyHandler.
+		next.ServeHTTP(w, req)
+	})
+}
+
 func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	deleteRequestHeaders(req)
 	if req.Method == http.MethodConnect {
