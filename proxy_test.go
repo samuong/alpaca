@@ -5,8 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
 	"io/ioutil"
 	"net"
@@ -14,6 +12,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type testServer struct {
@@ -74,7 +75,9 @@ func TestGetViaProxy(t *testing.T) {
 	requests := make(chan string, 2)
 	server := httptest.NewServer(testServer{requests})
 	defer server.Close()
-	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy()})
+	// Proxy request should not go to the mux. The empty mux will always return 404.
+	mux := http.NewServeMux()
+	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().WrapHandler(mux)})
 	defer proxy.Close()
 	tr := &http.Transport{Proxy: proxyServer(t, proxy)}
 	testGetRequest(t, tr, server.URL)
@@ -87,13 +90,29 @@ func TestGetOverTlsViaProxy(t *testing.T) {
 	requests := make(chan string, 2)
 	server := httptest.NewTLSServer(testServer{requests})
 	defer server.Close()
-	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy()})
+	// Proxy request should not go to the mux. The empty mux will always return 404.
+	mux := http.NewServeMux()
+	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().WrapHandler(mux)})
 	defer proxy.Close()
 	tr := &http.Transport{Proxy: proxyServer(t, proxy), TLSClientConfig: tlsConfig(server)}
 	testGetRequest(t, tr, server.URL)
 	require.Len(t, requests, 2)
 	assert.Equal(t, "CONNECT to proxy", <-requests)
 	assert.Equal(t, "GET to server", <-requests)
+}
+
+func TestGetOriginURLsNotProxied(t *testing.T) {
+	requests := make(chan string, 2)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/origin", func(w http.ResponseWriter, req *http.Request) {
+		_, err := w.Write([]byte("Hello, client\n"))
+		require.NoError(t, err)
+	})
+	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().WrapHandler(mux)})
+	defer proxy.Close()
+	testGetRequest(t, &http.Transport{}, proxy.URL+"/origin")
+	require.Len(t, requests, 1)
+	assert.Equal(t, "GET to proxy", <-requests)
 }
 
 func TestGetViaTwoProxies(t *testing.T) {
