@@ -14,11 +14,12 @@ import (
 type ProxyFinder struct {
 	runner  *PACRunner
 	fetcher *pacFetcher
+	wrapper *PACWrapper
 	sync.Mutex
 }
 
-func NewProxyFinder(pacurl string) *ProxyFinder {
-	pf := &ProxyFinder{}
+func NewProxyFinder(pacurl string, wrapper *PACWrapper) *ProxyFinder {
+	pf := &ProxyFinder{wrapper: wrapper}
 	if len(pacurl) == 0 {
 		log.Println("No PAC URL specified or detected; all requests will be made directly")
 	} else if _, err := url.Parse(pacurl); err != nil {
@@ -48,10 +49,15 @@ func (pf *ProxyFinder) checkForUpdates() {
 	var pacjs []byte
 	pacjs = pf.fetcher.download()
 	if pacjs == nil {
+		if !pf.fetcher.isConnected() {
+			pf.wrapper.Wrap(nil)
+		}
 		return
 	}
 	if err := pf.runner.Update(pacjs); err != nil {
 		log.Printf("Error running PAC JS: %q\n", err)
+	} else {
+		pf.wrapper.Wrap(pacjs)
 	}
 }
 
