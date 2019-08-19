@@ -71,6 +71,7 @@ func main() {
 	var handler http.Handler = mux
 	handler = RequestLogger(handler)
 	handler = proxyHandler.WrapHandler(handler)
+	handler = proxyFinder.WrapHandler(handler)
 	handler = AddContextID(handler)
 
 	s := &http.Server{

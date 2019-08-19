@@ -31,6 +31,15 @@ func NewProxyFinder(pacurl string) *ProxyFinder {
 	return pf
 }
 
+func (pf *ProxyFinder) WrapHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if pf.fetcher != nil {
+			pf.checkForUpdates()
+		}
+		next.ServeHTTP(w, req)
+	})
+}
+
 func (pf *ProxyFinder) checkForUpdates() {
 	pf.Lock()
 	defer pf.Unlock()
@@ -49,7 +58,6 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 		log.Printf(`[%d] %s %s via "DIRECT"`, id, req.Method, req.URL)
 		return nil, nil
 	}
-	pf.checkForUpdates()
 	if !pf.fetcher.isConnected() {
 		log.Printf(`[%d] %s %s via "DIRECT" (not connected)`, id, req.Method, req.URL)
 		return nil, nil
