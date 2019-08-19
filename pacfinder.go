@@ -32,7 +32,7 @@ func findPACURLForDarwin() (string, error) {
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
-	defer cmd.Wait()
+	defer cmd.Wait() // nolint:errcheck
 	r := bufio.NewReader(stdout)
 	// Discard the first line, which isn't the name of a network service.
 	if _, err := r.ReadString('\n'); err != nil {
@@ -68,7 +68,7 @@ func getAutoProxyURL(networkService string) (string, error) {
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
-	defer cmd.Wait()
+	defer cmd.Wait() // nolint:errcheck
 	r := bufio.NewReader(stdout)
 	for {
 		line, err := r.ReadString('\n')

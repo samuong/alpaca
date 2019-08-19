@@ -46,7 +46,7 @@ func setsAreEqual(a, b map[string]struct{}) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for k, _ := range a {
+	for k := range a {
 		if _, ok := b[k]; !ok {
 			return false
 		}

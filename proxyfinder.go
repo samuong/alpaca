@@ -26,8 +26,7 @@ func NewProxyFinder(pacurl string) *ProxyFinder {
 func (pf *ProxyFinder) checkForUpdates() {
 	pf.Lock()
 	defer pf.Unlock()
-	var pacjs []byte
-	pacjs = pf.fetcher.download()
+	pacjs := pf.fetcher.download()
 	if pacjs == nil {
 		return
 	}

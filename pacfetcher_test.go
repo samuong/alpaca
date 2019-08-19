@@ -18,7 +18,7 @@ import (
 )
 
 func pacjsHandler(pacjs string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(pacjs)) }
+	return func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(pacjs)) } // nolint:errcheck
 }
 
 type fakeNetMonitor struct {

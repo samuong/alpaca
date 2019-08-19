@@ -80,8 +80,8 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
 	// will close the Reader for the other goroutine, forcing any blocked copy to unblock. This
 	// prevents any goroutine from blocking indefinitely (which will leak a file descriptor).
-	go func() { io.Copy(server, client); server.Close() }()
-	go func() { io.Copy(client, server); client.Close() }()
+	go func() { io.Copy(server, client); server.Close() }() // nolint:errcheck
+	go func() { io.Copy(client, server); client.Close() }() // nolint:errcheck
 }
 
 func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string, auth *authenticator) net.Conn {
