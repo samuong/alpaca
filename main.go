@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/user"
 
@@ -64,28 +63,20 @@ func main() {
 		}
 	}
 
-	var proxyHandler ProxyHandler
-	if len(pacURL) == 0 {
-		log.Println("No PAC URL specified or detected; all requests will be made directly")
-		proxyHandler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
-			log.Printf(`[%d] %s %s via "DIRECT"`,
-				req.Context().Value("id"), req.Method, req.URL)
-			return nil, nil
-		}, nil)
-	} else if _, err := url.Parse(pacURL); err != nil {
-		log.Fatalf("Couldn't find a valid PAC URL: %v", pacURL)
-	} else {
-		pf := NewProxyFinder(pacURL)
-		proxyHandler = NewProxyHandler(func(req *http.Request) (*url.URL, error) {
-			return pf.findProxyForRequest(req)
-		}, &a)
-	}
-
+	proxyFinder := NewProxyFinder(pacURL)
+	proxyHandler := NewProxyHandler(proxyFinder.findProxyForRequest, &a)
 	mux := http.NewServeMux()
+
+	// build the handler by wrapping middleware upon middleware
+	var handler http.Handler = mux
+	handler = RequestLogger(handler)
+	handler = proxyHandler.WrapHandler(handler)
+	handler = AddContextID(handler)
+
 	s := &http.Server{
 		// Set the addr to localhost so that we only listen locally.
 		Addr:    fmt.Sprintf("localhost:%d", *port),
-		Handler: AddContextID(proxyHandler.WrapHandler(RequestLogger(mux))),
+		Handler: handler,
 		// TODO: Implement HTTP/2 support. In the meantime, set TLSNextProto to a non-nil
 		// value to disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
