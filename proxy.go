@@ -71,10 +71,15 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	}
 	client, _, err := h.Hijack()
 	if err != nil {
-		// The response status has already been sent, so if hijacking fails, we can't return
-		// an error status to the client. Instead, log the error and finish up.
 		log.Printf("[%d] Error hijacking connection: %s", req.Context().Value("id"), err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		server.Close()
+		return
+	}
+	if _, err := client.Write([]byte("HTTP/1.1 200 OK\n\n")); err != nil {
+		log.Printf("[%d] Error sending response status: %s", req.Context().Value("id"), err)
+		server.Close()
+		client.Close()
 		return
 	}
 	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
@@ -149,7 +154,6 @@ func connectToServer(w http.ResponseWriter, req *http.Request) net.Conn {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
 	}
-	w.WriteHeader(http.StatusOK)
 	return conn
 }
 
