@@ -99,6 +99,7 @@ func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string, aut
 	}
 	err = req.Write(conn)
 	if err != nil {
+		conn.Close()
 		log.Printf("[%d] Error sending CONNECT request: %v", req.Context().Value("id"), err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil
@@ -120,6 +121,7 @@ func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string, aut
 		rd = bufio.NewReader(conn)
 		resp, err = auth.connect(req, conn, rd)
 		if err != nil {
+			conn.Close()
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return nil
 		}
