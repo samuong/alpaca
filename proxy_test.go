@@ -233,3 +233,27 @@ func testProxyTunnel(t *testing.T, onServer, onClient func(conn net.Conn)) {
 	onClient(client)
 	<-done
 }
+
+func TestConnectResponseHeaders(t *testing.T) {
+	server, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	defer server.Close()
+	proxy := httptest.NewServer(newDirectProxy())
+	defer proxy.Close()
+	client, err := net.Dial("tcp", proxy.Listener.Addr().String())
+	require.NoError(t, err)
+	defer client.Close()
+
+	host := server.Addr().String()
+	_, err = fmt.Fprintf(client, "CONNECT %s HTTP/1.1\nHost: %s\n\n", host, host)
+	require.NoError(t, err)
+	rd := bufio.NewReader(client)
+	resp, err := http.ReadResponse(rd, nil)
+	require.NoError(t, err)
+
+	// A server MUST NOT send any Transfer-Encoding or Content-Length header fields in a 2xx
+	// (Successful) response to CONNECT (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Empty(t, resp.TransferEncoding)
+	assert.Equal(t, int64(-1), resp.ContentLength)
+}
