@@ -76,11 +76,11 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 		server.Close()
 		return
 	}
-	if _, err := client.Write([]byte("HTTP/1.1 200 OK\n\n")); err != nil {
-		log.Printf("[%d] Error sending response status: %s", req.Context().Value("id"), err)
-		server.Close()
-		client.Close()
-		return
+	if u == nil {
+		// Write the response header directly. If we use Go's ResponseWriter, it will
+		// automatically insert a Content-Length header, which is not allowed in a 2xx
+		// CONNECT response (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
+		client.Write([]byte("HTTP/1.1 200 OK\n\n"))
 	}
 	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
 	// will close the Reader for the other goroutine, forcing any blocked copy to unblock. This
