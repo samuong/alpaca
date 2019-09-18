@@ -104,7 +104,7 @@ func TestNoMAD(t *testing.T) {
 	p := keychain.NewGenericPassword("", "malory@ISIS", "NoMAD", []byte("guest"), "")
 	p.SetAccessible(keychain.AccessibleWhenUnlocked)
 	p.UseKeychain(kc)
-	require.Nil(t, keychain.AddItem(p))
+	require.NoError(t, keychain.AddItem(p))
 
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=2"}
 	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }

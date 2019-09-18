@@ -14,7 +14,7 @@ import (
 func TestDirect(t *testing.T) {
 	var pr PACRunner
 	pacjs := []byte(`function FindProxyForURL(url, host) { return "DIRECT" }`)
-	require.Nil(t, pr.Update(pacjs))
+	require.NoError(t, pr.Update(pacjs))
 	proxy, err := pr.FindProxyForURL(&url.URL{Scheme: "https", Host: "anz.com"})
 	require.NoError(t, err)
 	assert.Equal(t, "DIRECT", proxy)
@@ -32,7 +32,7 @@ func TestPathAndQueryStripping(t *testing.T) {
 	for _, test := range tests {
 		var pr PACRunner
 		pacjs := []byte("function FindProxyForURL(url, host) { return url }")
-		require.Nil(t, pr.Update(pacjs))
+		require.NoError(t, pr.Update(pacjs))
 		t.Run(test.name, func(t *testing.T) {
 			u, err := url.Parse(test.input)
 			require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestIsPlainHostName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
 			vm := otto.New()
-			require.Nil(t, vm.Set("isPlainHostName", isPlainHostName))
+			require.NoError(t, vm.Set("isPlainHostName", isPlainHostName))
 			value, err := vm.Call("isPlainHostName", nil, test.host)
 			require.NoError(t, err)
 			actual, err := value.ToBoolean()
@@ -77,7 +77,7 @@ func TestDnsDomainIs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.host+" "+test.domain, func(t *testing.T) {
 			vm := otto.New()
-			require.Nil(t, vm.Set("dnsDomainIs", dnsDomainIs))
+			require.NoError(t, vm.Set("dnsDomainIs", dnsDomainIs))
 			value, err := vm.Call("dnsDomainIs", nil, test.host, test.domain)
 			require.NoError(t, err)
 			actual, err := value.ToBoolean()
@@ -102,7 +102,7 @@ func TestLocalHostOrDomainIs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			vm := otto.New()
-			require.Nil(t, vm.Set("localHostOrDomainIs", localHostOrDomainIs))
+			require.NoError(t, vm.Set("localHostOrDomainIs", localHostOrDomainIs))
 			value, err := vm.Call("localHostOrDomainIs", nil, test.host, test.hostdom)
 			require.NoError(t, err)
 			actual, err := value.ToBoolean()
@@ -123,7 +123,7 @@ func TestIsResolvable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
 			vm := otto.New()
-			require.Nil(t, vm.Set("isResolvable", isResolvable))
+			require.NoError(t, vm.Set("isResolvable", isResolvable))
 			value, err := vm.Call("isResolvable", nil, test.host)
 			require.NoError(t, err)
 			actual, err := value.ToBoolean()
@@ -148,7 +148,7 @@ func TestIsInNet(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
 			vm := otto.New()
-			require.Nil(t, vm.Set("isInNet", isInNet))
+			require.NoError(t, vm.Set("isInNet", isInNet))
 			value, err := vm.Call("isInNet", nil, test.host, test.pattern, test.mask)
 			require.NoError(t, err)
 			actual, err := value.ToBoolean()
@@ -169,7 +169,7 @@ func TestDnsResolve(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
 			vm := otto.New()
-			require.Nil(t, vm.Set("dnsResolve", dnsResolve))
+			require.NoError(t, vm.Set("dnsResolve", dnsResolve))
 			value, err := vm.Call("dnsResolve", nil, test.host)
 			require.NoError(t, err)
 			actual, err := value.ToString()
@@ -191,7 +191,7 @@ func TestConvertAddr(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.ipaddr, func(t *testing.T) {
 			vm := otto.New()
-			require.Nil(t, vm.Set("convert_addr", convertAddr))
+			require.NoError(t, vm.Set("convert_addr", convertAddr))
 			value, err := vm.Call("convert_addr", nil, test.ipaddr)
 			require.NoError(t, err)
 			actual, err := value.ToInteger()
@@ -203,7 +203,7 @@ func TestConvertAddr(t *testing.T) {
 
 func TestMyIpAddress(t *testing.T) {
 	vm := otto.New()
-	require.Nil(t, vm.Set("myIpAddress", myIpAddress))
+	require.NoError(t, vm.Set("myIpAddress", myIpAddress))
 	value, err := vm.Call("myIpAddress", nil)
 	require.NoError(t, err)
 	output, err := value.ToString()
@@ -235,7 +235,7 @@ func TestDnsDomainLevels(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
 			vm := otto.New()
-			require.Nil(t, vm.Set("dnsDomainLevels", dnsDomainLevels))
+			require.NoError(t, vm.Set("dnsDomainLevels", dnsDomainLevels))
 			value, err := vm.Call("dnsDomainLevels", nil, test.host)
 			require.NoError(t, err)
 			actual, err := value.ToInteger()
@@ -256,7 +256,7 @@ func TestShExpMatch(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.str+" "+test.shexp, func(t *testing.T) {
 			vm := otto.New()
-			require.Nil(t, vm.Set("shExpMatch", shExpMatch))
+			require.NoError(t, vm.Set("shExpMatch", shExpMatch))
 			value, err := vm.Call("shExpMatch", nil, test.str, test.shexp)
 			require.NoError(t, err)
 			actual, err := value.ToBoolean()
@@ -302,7 +302,7 @@ func TestWeekdayRange(t *testing.T) {
 				f := func(fc otto.FunctionCall) otto.Value {
 					return weekdayRange(fc, weekday.t)
 				}
-				require.Nil(t, vm.Set("weekdayRange", f))
+				require.NoError(t, vm.Set("weekdayRange", f))
 				value, err := vm.Call("weekdayRange", nil, test.args...)
 				require.NoError(t, err)
 				actual, err := value.ToBoolean()
@@ -432,7 +432,7 @@ func TestDateRange(t *testing.T) {
 		now, err := time.Parse(time.RFC3339, date+"T05:00:00+10:00")
 		require.NoError(t, err)
 		f := func(fc otto.FunctionCall) otto.Value { return dateRange(fc, now) }
-		require.Nil(t, vm.Set("dateRange", f))
+		require.NoError(t, vm.Set("dateRange", f))
 		value, err := vm.Call("dateRange", nil, args...)
 		require.NoError(t, err)
 		actual, err := value.ToBoolean()
@@ -525,7 +525,7 @@ func TestTimeRange(t *testing.T) {
 		now, err := time.Parse(time.RFC3339, "2019-07-01T"+mocktime+"+10:00")
 		require.NoError(t, err)
 		f := func(fc otto.FunctionCall) otto.Value { return timeRange(fc, now) }
-		require.Nil(t, vm.Set("timeRange", f))
+		require.NoError(t, vm.Set("timeRange", f))
 		value, err := vm.Call("timeRange", nil, args...)
 		require.NoError(t, err)
 		actual, err := value.ToBoolean()

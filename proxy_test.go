@@ -225,7 +225,7 @@ func testProxyTunnel(t *testing.T, onServer, onClient func(conn net.Conn)) {
 	serverURL := url.URL{Host: server.Addr().String()}
 	req, err := http.NewRequest(http.MethodConnect, serverURL.String(), nil)
 	require.NoError(t, err)
-	require.Nil(t, req.Write(client))
+	require.NoError(t, req.Write(client))
 	resp, err := http.ReadResponse(bufio.NewReader(client), req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)

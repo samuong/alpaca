@@ -14,8 +14,8 @@ func TestFindPACURLForDarwin(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
-	defer require.Nil(t, os.Setenv("PATH", oldpath))
-	require.Nil(t, os.Setenv("PATH", dir+":"+oldpath))
+	defer require.NoError(t, os.Setenv("PATH", oldpath))
+	require.NoError(t, os.Setenv("PATH", dir+":"+oldpath))
 
 	tmpfn := filepath.Join(dir, "networksetup")
 	mockcmd := `#!/bin/sh
@@ -56,7 +56,7 @@ else
 fi
 
 exit 0`
-	require.Nil(t, ioutil.WriteFile(tmpfn, []byte(mockcmd), 0700))
+	require.NoError(t, ioutil.WriteFile(tmpfn, []byte(mockcmd), 0700))
 
 	pacURL, err := findPACURLForDarwin()
 	require.NoError(t, err)
@@ -68,8 +68,8 @@ func TestFindPACURLForDarwinWhenNetworkSetupIsntAvailable(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
-	defer require.Nil(t, os.Setenv("PATH", oldpath))
-	require.Nil(t, os.Setenv("PATH", dir))
+	defer require.NoError(t, os.Setenv("PATH", oldpath))
+	require.NoError(t, os.Setenv("PATH", dir))
 	_, err = findPACURLForDarwin()
 	require.NotNil(t, err)
 }
@@ -79,12 +79,12 @@ func TestFindPACURLForGNOME(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
-	defer require.Nil(t, os.Setenv("PATH", oldpath))
+	defer require.NoError(t, os.Setenv("PATH", oldpath))
 
-	require.Nil(t, os.Setenv("PATH", dir))
+	require.NoError(t, os.Setenv("PATH", dir))
 	tmpfn := filepath.Join(dir, "gsettings")
 	mockcmd := "#!/bin/sh\necho \\'http://internal.anz.com/proxy.pac\\'\n"
-	require.Nil(t, ioutil.WriteFile(tmpfn, []byte(mockcmd), 0700))
+	require.NoError(t, ioutil.WriteFile(tmpfn, []byte(mockcmd), 0700))
 
 	pacURL, err := findPACURLForGNOME()
 	require.NoError(t, err)
@@ -96,8 +96,8 @@ func TestFindPACURLForGNOMEWhenGsettingsIsntAvailable(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
-	defer require.Nil(t, os.Setenv("PATH", oldpath))
-	require.Nil(t, os.Setenv("PATH", dir))
+	defer require.NoError(t, os.Setenv("PATH", oldpath))
+	require.NoError(t, os.Setenv("PATH", dir))
 	_, err = findPACURLForGNOME()
 	require.NotNil(t, err)
 }

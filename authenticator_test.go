@@ -25,7 +25,7 @@ func (s ntlmServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	msg, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(hdr, "NTLM "))
-	require.Nil(s.t, err)
+	require.NoError(s.t, err)
 	require.True(s.t, bytes.Equal(msg[0:8], []byte("NTLMSSP\x00")), "Missing NTLMSSP signature")
 	msgType := binary.LittleEndian.Uint32(msg[8:12])
 	switch msgType {
