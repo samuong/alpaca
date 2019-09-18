@@ -11,7 +11,7 @@ import (
 
 func TestFindPACURLForDarwin(t *testing.T) {
 	dir, err := ioutil.TempDir("", "alpaca")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
 	defer require.Nil(t, os.Setenv("PATH", oldpath))
@@ -59,13 +59,13 @@ exit 0`
 	require.Nil(t, ioutil.WriteFile(tmpfn, []byte(mockcmd), 0700))
 
 	pacURL, err := findPACURLForDarwin()
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "http://internal.anz.com/proxy.pac", pacURL)
 }
 
 func TestFindPACURLForDarwinWhenNetworkSetupIsntAvailable(t *testing.T) {
 	dir, err := ioutil.TempDir("", "alpaca")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
 	defer require.Nil(t, os.Setenv("PATH", oldpath))
@@ -76,7 +76,7 @@ func TestFindPACURLForDarwinWhenNetworkSetupIsntAvailable(t *testing.T) {
 
 func TestFindPACURLForGNOME(t *testing.T) {
 	dir, err := ioutil.TempDir("", "alpaca")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
 	defer require.Nil(t, os.Setenv("PATH", oldpath))
@@ -87,13 +87,13 @@ func TestFindPACURLForGNOME(t *testing.T) {
 	require.Nil(t, ioutil.WriteFile(tmpfn, []byte(mockcmd), 0700))
 
 	pacURL, err := findPACURLForGNOME()
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "http://internal.anz.com/proxy.pac", pacURL)
 }
 
 func TestFindPACURLForGNOMEWhenGsettingsIsntAvailable(t *testing.T) {
 	dir, err := ioutil.TempDir("", "alpaca")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
 	defer require.Nil(t, os.Setenv("PATH", oldpath))
