@@ -39,7 +39,7 @@ func TestFindProxyForRequest(t *testing.T) {
 				assert.NotNil(t, err)
 				return
 			}
-			require.Nil(t, err)
+			require.NoError(t, err)
 			if test.expected == "" {
 				assert.Nil(t, proxy)
 				return
@@ -56,6 +56,6 @@ func TestFallbackToDirectWhenNotConnected(t *testing.T) {
 	pf := NewProxyFinder(url, pw)
 	req := httptest.NewRequest(http.MethodGet, "http://www.test", nil)
 	proxy, err := pf.findProxyForRequest(req)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Nil(t, proxy)
 }

@@ -95,21 +95,21 @@ func TestNoMADInvalidUserPrincipal(t *testing.T) {
 
 func TestNoMAD(t *testing.T) {
 	dir, err := ioutil.TempDir("", "alpaca")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	kc, err := keychain.NewKeychain(path.Join(dir, "test.keychain"), "")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	testKeychain = &kc
 
 	p := keychain.NewGenericPassword("", "malory@ISIS", "NoMAD", []byte("guest"), "")
 	p.SetAccessible(keychain.AccessibleWhenUnlocked)
 	p.UseKeychain(kc)
-	require.Nil(t, keychain.AddItem(p))
+	require.NoError(t, keychain.AddItem(p))
 
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=2"}
 	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
 	auth, err := getCredentialsFromNoMAD()
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "ISIS", auth.domain)
 	assert.Equal(t, "malory", auth.username)
 	assert.Equal(t, "guest", auth.password)

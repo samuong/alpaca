@@ -50,7 +50,7 @@ func newChildProxy(parent *httptest.Server) ProxyHandler {
 
 func proxyServer(t *testing.T, proxy *httptest.Server) proxyFunc {
 	u, err := url.Parse(proxy.URL)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	return http.ProxyURL(u)
 }
 
@@ -63,11 +63,11 @@ func tlsConfig(server *httptest.Server) *tls.Config {
 func testGetRequest(t *testing.T, tr *http.Transport, serverURL string) {
 	client := http.Client{Transport: tr}
 	resp, err := client.Get(serverURL)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	buf, err := ioutil.ReadAll(resp.Body)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "Hello, client\n", string(buf))
 }
 
@@ -164,7 +164,7 @@ func (s hopByHopTestServer) ServeHTTP(w http.ResponseWriter, req *http.Request) 
 
 func testHopByHopHeaders(t *testing.T, method, url string, proxy proxyFunc) {
 	req, err := http.NewRequest(method, url, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	req.Header.Set("Connection", "X-Alpaca-Request")
 	req.Header.Set("Proxy-Authorization", "Basic bWFsb3J5YXJjaGVyOmd1ZXN0")
 	req.Header.Set("Authorization", "Basic bmlrb2xhaWpha292Omd1ZXN0")
@@ -172,7 +172,7 @@ func testHopByHopHeaders(t *testing.T, method, url string, proxy proxyFunc) {
 
 	tr := &http.Transport{Proxy: proxy}
 	resp, err := tr.RoundTrip(req)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -225,28 +225,28 @@ func TestCloseFromOneSideResultsInEOFOnOtherSide(t *testing.T) {
 func testProxyTunnel(t *testing.T, onServer, onClient func(conn net.Conn)) {
 	// Set up a Listener to act as a server, which we'll connect to via the proxy.
 	server, err := net.Listen("tcp", "localhost:0")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer server.Close()
 	proxy := httptest.NewServer(newDirectProxy())
 	defer proxy.Close()
 	client, err := net.Dial("tcp", proxy.Listener.Addr().String())
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer client.Close()
 	// The server just accepts a connection and calls the callback.
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		conn, err := server.Accept()
-		require.Nil(t, err)
+		require.NoError(t, err)
 		onServer(conn)
 	}()
 	// Connect to the server via the proxy, using a CONNECT request.
 	serverURL := url.URL{Host: server.Addr().String()}
 	req, err := http.NewRequest(http.MethodConnect, serverURL.String(), nil)
-	require.Nil(t, err)
-	require.Nil(t, req.Write(client))
+	require.NoError(t, err)
+	require.NoError(t, req.Write(client))
 	resp, err := http.ReadResponse(bufio.NewReader(client), req)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	// Call the client callback, and then make sure that the server is done before finishing.
 	onClient(client)

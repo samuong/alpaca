@@ -98,10 +98,10 @@ func TestPacFromFilesystem(t *testing.T) {
 	// Set up a test PAC file
 	content := []byte(`function FindProxyForURL(url, host) { return "DIRECT" }`)
 	tempdir, err := ioutil.TempDir("", "alpaca")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer os.RemoveAll(tempdir)
 	pacPath := path.Join(tempdir, "test.pac")
-	require.Nil(t, ioutil.WriteFile(pacPath, content, 0644))
+	require.NoError(t, ioutil.WriteFile(pacPath, content, 0644))
 	pacURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(pacPath)}
 
 	tn := testNetwork{false}
