@@ -30,7 +30,8 @@ func TestFindProxyForRequest(t *testing.T) {
 			js := fmt.Sprintf("function FindProxyForURL(url, host) { %s }", test.body)
 			server := httptest.NewServer(http.HandlerFunc(pacjsHandler(js)))
 			defer server.Close()
-			pf := NewProxyFinder(server.URL)
+			pw := NewPACWrapper(PACData{Port: 1})
+			pf := NewProxyFinder(server.URL, pw)
 			req := httptest.NewRequest(http.MethodGet, "https://www.test", nil)
 			req = req.WithContext(context.WithValue(req.Context(), "id", i))
 			proxy, err := pf.findProxyForRequest(req)
@@ -50,7 +51,9 @@ func TestFindProxyForRequest(t *testing.T) {
 }
 
 func TestFallbackToDirectWhenNotConnected(t *testing.T) {
-	pf := NewProxyFinder("http://pacserver.invalid/nonexistent.pac")
+	url := "http://pacserver.invalid/nonexistent.pac"
+	pw := NewPACWrapper(PACData{Port: 1})
+	pf := NewProxyFinder(url, pw)
 	req := httptest.NewRequest(http.MethodGet, "http://www.test", nil)
 	proxy, err := pf.findProxyForRequest(req)
 	require.Nil(t, err)

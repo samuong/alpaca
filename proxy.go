@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -17,29 +16,32 @@ import (
 type ProxyHandler struct {
 	transport *http.Transport
 	auth      *authenticator
-	ids       chan uint
 }
 
 type proxyFunc func(*http.Request) (*url.URL, error)
 
 func NewProxyHandler(proxy proxyFunc, auth *authenticator) ProxyHandler {
-	return newProxyHandler(&http.Transport{Proxy: proxy}, auth)
+	return ProxyHandler{&http.Transport{Proxy: proxy}, auth}
 }
 
-func newProxyHandler(tr *http.Transport, auth *authenticator) ProxyHandler {
-	ids := make(chan uint)
-	go func() {
-		for id := uint(0); ; id++ {
-			ids <- id
+func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Pass CONNECT requests and absolute-form URIs to the ProxyHandler.
+		// If the request URL has a scheme, it is an absolute-form URI
+		// (RFC 7230 Section 5.3.2).
+		if req.Method == http.MethodConnect || req.URL.Scheme != "" {
+			ph.ServeHTTP(w, req)
+			return
 		}
-	}()
-	return ProxyHandler{tr, auth, ids}
+		// The request URI is an origin-form or asterisk-form target which we
+		// handle as an origin server (RFC 7230 5.3). authority-form URIs
+		// are only for CONNECT, which has already been dispatched to the
+		// ProxyHandler.
+		next.ServeHTTP(w, req)
+	})
 }
 
 func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	ctx = context.WithValue(ctx, "id", <-ph.ids)
-	req = req.WithContext(ctx)
 	deleteRequestHeaders(req)
 	if req.Method == http.MethodConnect {
 		ph.handleConnect(w, req)
