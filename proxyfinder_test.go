@@ -59,3 +59,13 @@ func TestFallbackToDirectWhenNotConnected(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, proxy)
 }
+
+func TestFallbackToDirectWhenNoPACURL(t *testing.T) {
+	url := ""
+	pw := NewPACWrapper(PACData{Port: 1})
+	pf := NewProxyFinder(url, pw)
+	req := httptest.NewRequest(http.MethodGet, "http://www.test", nil)
+	proxy, err := pf.findProxyForRequest(req)
+	require.NoError(t, err)
+	assert.Nil(t, proxy)
+}
