@@ -27,8 +27,8 @@ func NewProxyFinder(pacurl string, wrapper *PACWrapper) *ProxyFinder {
 	} else {
 		pf.runner = new(PACRunner)
 		pf.fetcher = newPACFetcher(pacurl)
+		pf.checkForUpdates()
 	}
-	pf.checkForUpdates()
 	return pf
 }
 
