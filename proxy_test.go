@@ -157,7 +157,6 @@ func (s hopByHopTestServer) ServeHTTP(w http.ResponseWriter, req *http.Request) 
 	assert.Contains(s.t, req.Header, "Authorization")
 	assert.NotContains(s.t, req.Header, "X-Alpaca-Request")
 	w.Header().Set("Connection", "X-Alpaca-Response")
-	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Alpaca-Response", "this should get dropped")
 	w.WriteHeader(http.StatusOK)
 }
@@ -177,7 +176,6 @@ func testHopByHopHeaders(t *testing.T, method, url string, proxy proxyFunc) {
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.NotContains(t, resp.Header, "Connection")
-	assert.Contains(t, resp.Header, "Cache-Control")
 	assert.NotContains(t, resp.Header, "X-Alpaca-Response")
 }
 
@@ -251,4 +249,43 @@ func testProxyTunnel(t *testing.T, onServer, onClient func(conn net.Conn)) {
 	// Call the client callback, and then make sure that the server is done before finishing.
 	onClient(client)
 	<-done
+}
+
+func TestConnectResponseHeadersWithOneProxy(t *testing.T) {
+	server, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	defer server.Close()
+	proxy := httptest.NewServer(newDirectProxy())
+	defer proxy.Close()
+	client, err := net.Dial("tcp", proxy.Listener.Addr().String())
+	require.NoError(t, err)
+	defer client.Close()
+	testConnectResponseHeaders(t, server.Addr().String(), client)
+}
+
+func TestConnectResponseHeadersWithTwoProxies(t *testing.T) {
+	server, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	defer server.Close()
+	parent := httptest.NewServer(newDirectProxy())
+	defer parent.Close()
+	child := httptest.NewServer(newChildProxy(parent))
+	defer child.Close()
+	client, err := net.Dial("tcp", child.Listener.Addr().String())
+	require.NoError(t, err)
+	defer client.Close()
+	testConnectResponseHeaders(t, server.Addr().String(), client)
+}
+
+func testConnectResponseHeaders(t *testing.T, server string, client net.Conn) {
+	_, err := fmt.Fprintf(client, "CONNECT %s HTTP/1.1\nHost: %s\n\n", server, server)
+	require.NoError(t, err)
+	rd := bufio.NewReader(client)
+	resp, err := http.ReadResponse(rd, nil)
+	require.NoError(t, err)
+	// A server MUST NOT send any Transfer-Encoding or Content-Length header fields in a 2xx
+	// (Successful) response to CONNECT (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Empty(t, resp.TransferEncoding)
+	assert.Equal(t, int64(-1), resp.ContentLength)
 }

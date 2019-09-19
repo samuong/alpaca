@@ -51,12 +51,6 @@ func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
-	h, ok := w.(http.Hijacker)
-	if !ok {
-		msg := fmt.Sprintf("Can't hijack connection to %v", req.Host)
-		http.Error(w, msg, http.StatusInternalServerError)
-		return
-	}
 	u, err := ph.transport.Proxy(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -64,21 +58,31 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	}
 	var server net.Conn
 	if u == nil {
-		server = connectToServer(w, req)
+		server, err = net.Dial("tcp", req.Host)
 	} else {
-		server = connectViaProxy(w, req, u.Host, ph.auth)
+		server, err = connectViaProxy(req, u.Host, ph.auth)
 	}
-	if server == nil {
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+	h, ok := w.(http.Hijacker)
+	if !ok {
+		msg := fmt.Sprintf("Can't hijack connection to %v", req.Host)
+		http.Error(w, msg, http.StatusInternalServerError)
 		return
 	}
 	client, _, err := h.Hijack()
 	if err != nil {
-		// The response status has already been sent, so if hijacking fails, we can't return
-		// an error status to the client. Instead, log the error and finish up.
 		log.Printf("[%d] Error hijacking connection: %s", req.Context().Value("id"), err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		server.Close()
 		return
 	}
+	// Write the response header directly. If we use Go's ResponseWriter, it will
+	// automatically insert a Content-Length header, which is not allowed in a 2xx
+	// CONNECT response (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
+	client.Write([]byte("HTTP/1.1 200 OK\n\n"))
 	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
 	// will close the Reader for the other goroutine, forcing any blocked copy to unblock. This
 	// prevents any goroutine from blocking indefinitely (which will leak a file descriptor).
@@ -86,73 +90,47 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	go func() { io.Copy(client, server); client.Close() }()
 }
 
-func connectViaProxy(w http.ResponseWriter, req *http.Request, proxy string, auth *authenticator) net.Conn {
+func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.Conn, error) {
 	// can't hijack the connection to server, so can't just replay request via a Transport
 	// need to dial and manually write connect header and read response
+	id := req.Context().Value("id")
 	conn, err := net.Dial("tcp", proxy)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return nil
+		log.Printf("[%d] Error dialling %s: %v", id, proxy, err)
+		return nil, err
 	}
-	err = req.Write(conn)
-	if err != nil {
-		log.Printf("[%d] Error sending CONNECT request: %v", req.Context().Value("id"), err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return nil
+	if err := req.Write(conn); err != nil {
+		conn.Close()
+		log.Printf("[%d] Error sending CONNECT request: %v", id, err)
+		return nil, err
 	}
 	rd := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(rd, req)
 	if err != nil {
 		conn.Close()
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return nil
+		log.Printf("[%d] Error reading CONNECT response: %v", id, err)
+		return nil, err
 	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		resp.Body.Close()
 		conn.Close()
 		conn, err = net.Dial("tcp", proxy)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return nil
+			log.Printf("[%d] Error dialling %s (during retry): %v", id, proxy, err)
+			return nil, err
 		}
 		rd = bufio.NewReader(conn)
 		resp, err = auth.connect(req, conn, rd)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return nil
+			conn.Close()
+			return nil, err
 		}
 	}
-	copyResponseHeaders(w, resp)
-	w.WriteHeader(resp.StatusCode)
-	if resp.ContentLength != -1 {
-		// Only copy/close the response body when there is a known ContentLength.
-		// Otherwise, assume that anything that comes after the header is tunnelled data
-		// that is not part of the response itself.
-		//
-		// Sometimes, a CONNECT response has no Content-Length header (in which case Go's
-		// net/http library will set resp.ContentLength to -1). When this happens, reading
-		// or closing resp.Body will block, possibly indefinitely.
-		if n, err := io.CopyN(w, resp.Body, resp.ContentLength); err != nil {
-			log.Printf("Error copying response body (copied %d/%d bytes): %v",
-				n, resp.ContentLength, err)
-		}
-		resp.Body.Close()
-	}
+	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		conn.Close()
-		return nil
+		return nil, fmt.Errorf("[%d] Unexpected response status: %s", id, resp.Status)
 	}
-	return conn
-}
-
-func connectToServer(w http.ResponseWriter, req *http.Request) net.Conn {
-	// TODO: should probably put a timeout on this
-	conn, err := net.Dial("tcp", req.Host)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return nil
-	}
-	w.WriteHeader(http.StatusOK)
-	return conn
+	return conn, nil
 }
 
 func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
