@@ -51,9 +51,12 @@ func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
+	// Establish a connection to the server, or an upstream proxy.
 	u, err := ph.transport.Proxy(req)
+	id := req.Context().Value("id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("[%d] Can't find proxy for %v: %v", id, req.Host, err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	var server net.Conn
@@ -66,23 +69,27 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
+	// Establish a connection back to the client, by hijacking the ResponseWriter.
 	h, ok := w.(http.Hijacker)
 	if !ok {
-		msg := fmt.Sprintf("Can't hijack connection to %v", req.Host)
-		http.Error(w, msg, http.StatusInternalServerError)
+		log.Printf("[%d] Can't hijack response writer", id)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	client, _, err := h.Hijack()
 	if err != nil {
-		log.Printf("[%d] Error hijacking connection: %s", req.Context().Value("id"), err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		server.Close()
+		log.Printf("[%d] Error hijacking connection: %v", id, err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	// Write the response header directly. If we use Go's ResponseWriter, it will
 	// automatically insert a Content-Length header, which is not allowed in a 2xx
 	// CONNECT response (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
-	client.Write([]byte("HTTP/1.1 200 OK\n\n"))
+	if _, err := client.Write([]byte("HTTP/1.1 200 OK\n\n")); err != nil {
+		log.Printf("[%d] Error writing response: %v", id, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
 	// will close the Reader for the other goroutine, forcing any blocked copy to unblock. This
 	// prevents any goroutine from blocking indefinitely (which will leak a file descriptor).
