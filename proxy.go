@@ -88,7 +88,6 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// CONNECT response (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
 	if _, err := client.Write([]byte("HTTP/1.1 200 OK\n\n")); err != nil {
 		log.Printf("[%d] Error writing response: %v", id, err)
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
