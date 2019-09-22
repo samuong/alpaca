@@ -153,8 +153,10 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	rd := bytes.NewReader(buf.Bytes())
 	req.Body = ioutil.NopCloser(rd)
 	resp, err := ph.transport.RoundTrip(req)
+	id := req.Context().Value("id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("[%d] Error forwarding request: %v", id, err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
@@ -166,7 +168,8 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 			req.Body = ioutil.NopCloser(rd)
 			resp, err = auth.do(req, ph.transport)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				log.Printf("[%d] Error forwarding request (with auth): %v", id, err)
+				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 			defer resp.Body.Close()
