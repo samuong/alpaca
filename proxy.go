@@ -55,7 +55,7 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	u, err := ph.transport.Proxy(req)
 	id := req.Context().Value("id")
 	if err != nil {
-		log.Printf("[%d] Can't find proxy for %v: %v", id, req.Host, err)
+		log.Printf("[%d] Error finding proxy for %v: %v", id, req.Host, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -72,7 +72,7 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// Establish a connection back to the client, by hijacking the ResponseWriter.
 	h, ok := w.(http.Hijacker)
 	if !ok {
-		log.Printf("[%d] Can't hijack response writer", id)
+		log.Printf("[%d] Error hijacking response writer", id)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -143,16 +143,16 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
 	// Make a copy of the request body, in case we have to replay it (for authentication)
 	var buf bytes.Buffer
-	n, err := io.Copy(&buf, req.Body)
-	if err != nil {
-		log.Printf("Error copying request body (got %d/%d): %v", n, req.ContentLength, err)
+	id := req.Context().Value("id")
+	if n, err := io.Copy(&buf, req.Body); err != nil {
+		log.Printf("[%d] Error copying request body (got %d/%d): %v",
+			id, n, req.ContentLength, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	rd := bytes.NewReader(buf.Bytes())
 	req.Body = ioutil.NopCloser(rd)
 	resp, err := ph.transport.RoundTrip(req)
-	id := req.Context().Value("id")
 	if err != nil {
 		log.Printf("[%d] Error forwarding request: %v", id, err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -162,7 +162,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		_, err = rd.Seek(0, io.SeekStart)
 		if err != nil {
-			log.Printf("Error while seeking to start of request body: %v", err)
+			log.Printf("[%d] Error while seeking to start of request body: %v", id, err)
 		} else {
 			req.Body = ioutil.NopCloser(rd)
 			resp, err = auth.do(req, ph.transport)
@@ -178,10 +178,9 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
-		// The response status has already been sent, so if copying
-		// fails, we can't return an error status to the client.
-		// Instead, log the error.
-		log.Printf("[%d] Error copying response body: %s", req.Context().Value("id"), err)
+		// The response status has already been sent, so if copying fails, we can't return
+		// an error status to the client.  Instead, log the error.
+		log.Printf("[%d] Error copying response body: %v", id, err)
 		return
 	}
 }
