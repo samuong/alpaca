@@ -9,7 +9,7 @@ import (
 
 // PACData contains program configuration to be made available to the pacWrapTmpl.
 type PACData struct {
-	Port     int
+	Port int
 }
 
 type pacData struct {

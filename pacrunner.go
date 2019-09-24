@@ -3,13 +3,14 @@ package main
 import (
 	"encoding/binary"
 	"errors"
-	"github.com/gobwas/glob"
-	"github.com/robertkrimen/otto"
 	"net"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gobwas/glob"
+	"github.com/robertkrimen/otto"
 )
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file

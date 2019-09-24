@@ -2,9 +2,10 @@ package main
 
 import (
 	"errors"
-	"github.com/keybase/go-keychain"
 	"os/exec"
 	"strings"
+
+	"github.com/keybase/go-keychain"
 )
 
 var testKeychain *keychain.Keychain

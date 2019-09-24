@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
-	"strings"
 	"crypto/x509"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
