@@ -51,9 +51,12 @@ func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
+	// Establish a connection to the server, or an upstream proxy.
 	u, err := ph.transport.Proxy(req)
+	id := req.Context().Value("id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("[%d] Error finding proxy for %v: %v", id, req.Host, err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	var server net.Conn
@@ -66,23 +69,27 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
+	// Establish a connection back to the client, by hijacking the ResponseWriter.
 	h, ok := w.(http.Hijacker)
 	if !ok {
-		msg := fmt.Sprintf("Can't hijack connection to %v", req.Host)
-		http.Error(w, msg, http.StatusInternalServerError)
+		log.Printf("[%d] Error hijacking response writer", id)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	client, _, err := h.Hijack()
 	if err != nil {
-		log.Printf("[%d] Error hijacking connection: %s", req.Context().Value("id"), err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("[%d] Error hijacking connection: %v", id, err)
+		w.WriteHeader(http.StatusInternalServerError)
 		server.Close()
 		return
 	}
 	// Write the response header directly. If we use Go's ResponseWriter, it will
 	// automatically insert a Content-Length header, which is not allowed in a 2xx
 	// CONNECT response (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
-	client.Write([]byte("HTTP/1.1 200 OK\n\n"))
+	if _, err := client.Write([]byte("HTTP/1.1 200 OK\n\n")); err != nil {
+		log.Printf("[%d] Error writing response: %v", id, err)
+		return
+	}
 	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
 	// will close the Reader for the other goroutine, forcing any blocked copy to unblock. This
 	// prevents any goroutine from blocking indefinitely (which will leak a file descriptor).
@@ -136,9 +143,10 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
 	// Make a copy of the request body, in case we have to replay it (for authentication)
 	var buf bytes.Buffer
-	n, err := io.Copy(&buf, req.Body)
-	if err != nil {
-		log.Printf("Error copying request body (got %d/%d): %v", n, req.ContentLength, err)
+	id := req.Context().Value("id")
+	if n, err := io.Copy(&buf, req.Body); err != nil {
+		log.Printf("[%d] Error copying request body (got %d/%d): %v",
+			id, n, req.ContentLength, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -146,19 +154,21 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	req.Body = ioutil.NopCloser(rd)
 	resp, err := ph.transport.RoundTrip(req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("[%d] Error forwarding request: %v", id, err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		_, err = rd.Seek(0, io.SeekStart)
 		if err != nil {
-			log.Printf("Error while seeking to start of request body: %v", err)
+			log.Printf("[%d] Error while seeking to start of request body: %v", id, err)
 		} else {
 			req.Body = ioutil.NopCloser(rd)
 			resp, err = auth.do(req, ph.transport)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				log.Printf("[%d] Error forwarding request (with auth): %v", id, err)
+				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 			defer resp.Body.Close()
@@ -168,10 +178,9 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
 	if err != nil {
-		// The response status has already been sent, so if copying
-		// fails, we can't return an error status to the client.
-		// Instead, log the error.
-		log.Printf("[%d] Error copying response body: %s", req.Context().Value("id"), err)
+		// The response status has already been sent, so if copying fails, we can't return
+		// an error status to the client.  Instead, log the error.
+		log.Printf("[%d] Error copying response body: %v", id, err)
 		return
 	}
 }
