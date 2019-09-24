@@ -292,9 +292,7 @@ func testConnectResponseHeaders(t *testing.T, server string, client net.Conn) {
 }
 
 func TestConnectResponseHasCorrectNewlines(t *testing.T) {
-	// "HTTP/1.1 defines the sequence CR LF as the end-of-line marker"
-	// https://www.w3.org/Protocols/rfc2616/rfc2616-sec2.html#sec2.2
-	// https://github.com/samuong/alpaca/issues/29
+	// See https://github.com/samuong/alpaca/issues/29 for some context behind this test.
 	server, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	defer server.Close()
@@ -314,6 +312,8 @@ func TestConnectResponseHasCorrectNewlines(t *testing.T) {
 	buf, err := ioutil.ReadAll(client)
 	require.NoError(t, err)
 	resp := string(buf)
+	// "HTTP/1.1 defines the sequence CR LF as the end-of-line marker"
+	// https://www.w3.org/Protocols/rfc2616/rfc2616-sec2.html#sec2.2
 	noCRLFs := strings.ReplaceAll(resp, "\r\n", "")
 	assert.NotContains(t, noCRLFs, "\r", "response contains unmatched CR")
 	assert.NotContains(t, noCRLFs, "\n", "response contains unmatched LF")
