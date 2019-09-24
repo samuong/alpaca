@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/samuong/alpaca/cancelable"
 )
 
 type ProxyHandler struct {
@@ -69,7 +71,9 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
-	// Establish a connection back to the client, by hijacking the ResponseWriter.
+	serverCloser := cancelable.NewCloser(server)
+	defer serverCloser.Close()
+	// Take over the connection back to the client by hijacking the ResponseWriter.
 	h, ok := w.(http.Hijacker)
 	if !ok {
 		log.Printf("[%d] Error hijacking response writer", id)
@@ -83,6 +87,8 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 		server.Close()
 		return
 	}
+	clientCloser := cancelable.NewCloser(client)
+	defer clientCloser.Close()
 	// Write the response header directly. If we use Go's ResponseWriter, it will
 	// automatically insert a Content-Length header, which is not allowed in a 2xx
 	// CONNECT response (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
@@ -93,6 +99,8 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
 	// will close the Reader for the other goroutine, forcing any blocked copy to unblock. This
 	// prevents any goroutine from blocking indefinitely (which will leak a file descriptor).
+	serverCloser.Cancel()
+	clientCloser.Cancel()
 	go func() { io.Copy(server, client); server.Close() }()
 	go func() { io.Copy(client, server); client.Close() }()
 }
@@ -106,37 +114,38 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 		log.Printf("[%d] Error dialling %s: %v", id, proxy, err)
 		return nil, err
 	}
+	closer := cancelable.NewCloser(conn)
+	defer closer.Close()
 	if err := req.Write(conn); err != nil {
-		conn.Close()
 		log.Printf("[%d] Error sending CONNECT request: %v", id, err)
 		return nil, err
 	}
 	rd := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(rd, req)
 	if err != nil {
-		conn.Close()
 		log.Printf("[%d] Error reading CONNECT response: %v", id, err)
 		return nil, err
 	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		resp.Body.Close()
-		conn.Close()
+		closer.Close()
 		conn, err = net.Dial("tcp", proxy)
 		if err != nil {
 			log.Printf("[%d] Error dialling %s (during retry): %v", id, proxy, err)
 			return nil, err
 		}
+		closer = cancelable.NewCloser(conn)
+		defer closer.Close()
 		rd = bufio.NewReader(conn)
 		resp, err = auth.connect(req, conn, rd)
 		if err != nil {
-			conn.Close()
 			return nil, err
 		}
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		conn.Close()
 		return nil, fmt.Errorf("[%d] Unexpected response status: %s", id, resp.Status)
 	}
+	closer.Cancel()
 	return conn, nil
 }
 
