@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
+	"strings"
 	"crypto/x509"
 	"fmt"
 	"io"
@@ -288,4 +289,32 @@ func testConnectResponseHeaders(t *testing.T, server string, client net.Conn) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Empty(t, resp.TransferEncoding)
 	assert.Equal(t, int64(-1), resp.ContentLength)
+}
+
+func TestConnectResponseHasCorrectNewlines(t *testing.T) {
+	// See https://github.com/samuong/alpaca/issues/29 for some context behind this test.
+	server, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	defer server.Close()
+	go func() {
+		conn, err := server.Accept()
+		require.NoError(t, err)
+		conn.Close()
+	}()
+	proxy := httptest.NewServer(newDirectProxy())
+	defer proxy.Close()
+	client, err := net.Dial("tcp", proxy.Listener.Addr().String())
+	require.NoError(t, err)
+	defer client.Close()
+	req := fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", server.Addr().String())
+	_, err = client.Write([]byte(req))
+	require.NoError(t, err)
+	buf, err := ioutil.ReadAll(client)
+	require.NoError(t, err)
+	resp := string(buf)
+	// "HTTP/1.1 defines the sequence CR LF as the end-of-line marker"
+	// https://www.w3.org/Protocols/rfc2616/rfc2616-sec2.html#sec2.2
+	noCRLFs := strings.ReplaceAll(resp, "\r\n", "")
+	assert.NotContains(t, noCRLFs, "\r", "response contains unmatched CR")
+	assert.NotContains(t, noCRLFs, "\n", "response contains unmatched LF")
 }
