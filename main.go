@@ -12,7 +12,7 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-var getCredentialsFromKeyring func() (authenticator, error)
+var getCredentialsFromKeyring func() (*authenticator, error)
 
 func whoAmI() string {
 	me, err := user.Current()
@@ -39,7 +39,7 @@ func main() {
 		}
 	}
 
-	var a authenticator
+	var a *authenticator
 	if *domain != "" {
 		fmt.Printf("Password (for %s\\%s): ", *domain, *username)
 		buf, err := terminal.ReadPassword(int(os.Stdin.Fd()))
@@ -47,7 +47,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error reading password from stdin: %v", err)
 		}
-		a = authenticator{domain: *domain, username: *username, password: string(buf)}
+		a = &authenticator{domain: *domain, username: *username, password: string(buf)}
 	} else if getCredentialsFromKeyring != nil {
 		tmp, err := getCredentialsFromKeyring()
 		if err != nil {
@@ -61,7 +61,7 @@ func main() {
 
 	pacWrapper := NewPACWrapper(PACData{Port: *port})
 	proxyFinder := NewProxyFinder(pacURL, pacWrapper)
-	proxyHandler := NewProxyHandler(proxyFinder.findProxyForRequest, &a)
+	proxyHandler := NewProxyHandler(proxyFinder.findProxyForRequest, a)
 	mux := http.NewServeMux()
 	pacWrapper.SetupHandlers(mux)
 
