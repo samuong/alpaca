@@ -18,7 +18,7 @@ func readDefaultForNoMAD(key string) (string, error) {
 	cmd := execCommand("defaults", "read", "com.trusourcelabs.NoMAD", key)
 	out, err := cmd.Output()
 	if err != nil {
-		return "", errors.New("NoMAD configuration key not found.")
+		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
 }
