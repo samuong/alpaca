@@ -30,10 +30,6 @@ func main() {
 	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
 	flag.Parse()
 
-	if len(os.Args) > 1 {
-		fmt.Fprintln(os.Stderr, "warning: alpaca is still under heavy development and command-line arguments will probably change in the future, so please don't get too attached to them :)")
-	}
-
 	pacURL := *pacURLFromFlag
 	if len(pacURL) == 0 {
 		var err error
