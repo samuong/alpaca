@@ -13,7 +13,7 @@ Contributions are welcome, please reach out to me if you'd like to help!
 To download and install Alpaca, use:
 
 ```sh
-$ go get -v github.com/samuong/alpaca
+$ go get -v -u github.com/samuong/alpaca
 ```
 
 Then start Alpaca by running the `alpaca` binary.
