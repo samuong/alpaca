@@ -2,14 +2,15 @@ package main
 
 import (
 	"fmt"
-	"github.com/keybase/go-keychain"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
 	"testing"
+
+	"github.com/keybase/go-keychain"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func fakeExecCommand(env []string, name string, arg ...string) *exec.Cmd {

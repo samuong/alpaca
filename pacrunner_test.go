@@ -1,14 +1,15 @@
 package main
 
 import (
-	"github.com/robertkrimen/otto"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"net"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/robertkrimen/otto"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDirect(t *testing.T) {

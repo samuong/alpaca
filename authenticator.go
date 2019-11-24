@@ -3,12 +3,13 @@ package main
 import (
 	"bufio"
 	"encoding/base64"
-	"github.com/Azure/go-ntlmssp"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/Azure/go-ntlmssp"
 )
 
 type authenticator struct {

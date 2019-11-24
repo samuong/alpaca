@@ -2,9 +2,10 @@ package main
 
 import (
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"net"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type mockAddr string

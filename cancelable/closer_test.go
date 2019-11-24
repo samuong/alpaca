@@ -10,7 +10,7 @@ import (
 
 type testCloser struct {
 	closed bool
-	err error
+	err    error
 }
 
 func (tc *testCloser) Close() error {

@@ -93,9 +93,9 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// will automatically insert a Content-Length header, which is not allowed in a 2xx CONNECT
 	// response (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
 	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		ProtoMajor: req.ProtoMajor,
-		ProtoMinor: req.ProtoMinor,
+		StatusCode:    http.StatusOK,
+		ProtoMajor:    req.ProtoMajor,
+		ProtoMinor:    req.ProtoMinor,
 		ContentLength: -1,
 	}
 	if err := resp.Write(client); err != nil {
