@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 	"os/exec"
 	"strings"
 
@@ -41,22 +42,23 @@ func readPasswordFromKeychain(userPrincipal string) string {
 	return string(results[0].Data)
 }
 
-func getCredentialsFromNoMAD() (authenticator, error) {
+func getCredentialsFromNoMAD() (*authenticator, error) {
 	useKeychain, err := readDefaultForNoMAD("UseKeychain")
 	if err != nil {
-		return authenticator{}, err
+		return nil, err
 	} else if useKeychain != "1" {
-		return authenticator{}, errors.New(`NoMAD found, but UseKeychain != 1. To sync your AD password to the system keychain (and have Alpaca automatically retrieve it from there) open NoMAD's Preferences dialog and check "Use Keychain".`)
+		return nil, errors.New("NoMAD found, but not configured to use keychain")
 	}
 	userPrincipal, err := readDefaultForNoMAD("UserPrincipal")
 	if err != nil {
-		return authenticator{}, err
+		return nil, err
 	}
 	substrs := strings.Split(userPrincipal, "@")
 	if len(substrs) != 2 {
-		return authenticator{}, errors.New("Couldn't retrieve AD domain and username from NoMAD.")
+		return nil, errors.New("Couldn't retrieve AD domain and username from NoMAD.")
 	}
 	user, domain := substrs[0], substrs[1]
 	password := readPasswordFromKeychain(userPrincipal)
-	return authenticator{domain, user, password}, nil
+	log.Printf("Found NoMAD credentails for %s\\%s in system keychain", domain, user)
+	return &authenticator{domain, user, password}, nil
 }
