@@ -54,8 +54,13 @@ func (pf *pacFetcher) download() []byte {
 	pf.connected = false
 	resp, err := pf.client.Get(pf.pacurl)
 	if err != nil {
-		log.Printf("Error downloading PAC file: %q", err)
-		return nil
+		log.Printf("Error downloading PAC file, retrying after 2 seconds: %q", err)
+		time.Sleep(2 * time.Second)
+		resp, err = pf.client.Get(pf.pacurl)
+		if err != nil {
+			log.Printf("Error downloading PAC file, giving up: %q", err)
+			return nil
+		}
 	}
 	defer resp.Body.Close()
 	log.Printf("GET %q returned %q", pf.pacurl, resp.Status)
