@@ -58,7 +58,7 @@ func (pf *pacFetcher) download() []byte {
 		return nil
 	}
 	defer resp.Body.Close()
-	log.Printf("GET %q returned %q\n", pf.pacurl, resp.Status)
+	log.Printf("GET %q returned %q", pf.pacurl, resp.Status)
 	if resp.StatusCode != http.StatusOK {
 		return nil
 	}

@@ -21,14 +21,14 @@ func newNetMonitor() *netMonitorImpl {
 func (nm *netMonitorImpl) addrsChanged() bool {
 	addrs, err := nm.getAddrs()
 	if err != nil {
-		log.Printf("Error while getting network interface addresses: %q\n", err)
+		log.Printf("Error while getting network interface addresses: %q", err)
 		return false
 	}
 	set := addrSliceToSet(addrs)
 	if setsAreEqual(set, nm.addrs) {
 		return false
 	} else {
-		log.Printf("Network changes detected: %v\n", addrs)
+		log.Printf("Network changes detected: %v", addrs)
 		nm.addrs = set
 		return true
 	}

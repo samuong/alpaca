@@ -81,7 +81,7 @@ func main() {
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 
-	log.Printf("Listening on port %d\n", *port)
+	log.Printf("Listening on port %d", *port)
 	if err := s.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
