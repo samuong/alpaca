@@ -55,7 +55,7 @@ func (pf *ProxyFinder) checkForUpdates() {
 		return
 	}
 	if err := pf.runner.Update(pacjs); err != nil {
-		log.Printf("Error running PAC JS: %q\n", err)
+		log.Printf("Error running PAC JS: %q", err)
 	} else {
 		pf.wrapper.Wrap(pacjs)
 	}

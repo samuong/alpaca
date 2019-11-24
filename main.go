@@ -30,10 +30,6 @@ func main() {
 	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
 	flag.Parse()
 
-	if len(os.Args) > 1 {
-		fmt.Fprintln(os.Stderr, "warning: alpaca is still under heavy development and command-line arguments will probably change in the future, so please don't get too attached to them :)")
-	}
-
 	pacURL := *pacURLFromFlag
 	if len(pacURL) == 0 {
 		var err error
@@ -55,9 +51,9 @@ func main() {
 	} else if getCredentialsFromKeyring != nil {
 		tmp, err := getCredentialsFromKeyring()
 		if err != nil {
-			log.Printf("%v Disabling proxy authentication.\n", err)
+			log.Printf("NoMAD credentials not found, disabling proxy auth: %v", err)
 		} else {
-			log.Printf("Found NoMAD credentails for %s\\%s in system keychain\n",
+			log.Printf("Found NoMAD credentails for %s\\%s in system keychain",
 				tmp.domain, tmp.username)
 			a = tmp
 		}
@@ -85,7 +81,7 @@ func main() {
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 
-	log.Printf("Listening on port %d\n", *port)
+	log.Printf("Listening on port %d", *port)
 	if err := s.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}

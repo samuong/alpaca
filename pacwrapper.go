@@ -51,7 +51,7 @@ func (pw *PACWrapper) Wrap(pacjs []byte) {
 	pw.data.UpstreamPAC = pac
 	b := &bytes.Buffer{}
 	if err := pw.tmpl.Execute(b, pw.data); err != nil {
-		log.Printf("error executing PAC wrap template: %v\n", err)
+		log.Printf("error executing PAC wrap template: %v", err)
 		return
 	}
 	pw.alpacaPAC = b.String()
@@ -68,6 +68,6 @@ func (pw *PACWrapper) handlePAC(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/x-ns-proxy-autoconfig")
 	if _, err := w.Write([]byte(pw.alpacaPAC)); err != nil {
-		log.Printf("Error writing PAC to response: %v\n", err)
+		log.Printf("Error writing PAC to response: %v", err)
 	}
 }
