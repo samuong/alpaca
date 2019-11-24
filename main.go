@@ -49,13 +49,10 @@ func main() {
 		}
 		a = &authenticator{domain: *domain, username: *username, password: string(buf)}
 	} else if getCredentialsFromKeyring != nil {
-		tmp, err := getCredentialsFromKeyring()
+		var err error
+		a, err = getCredentialsFromKeyring()
 		if err != nil {
 			log.Printf("NoMAD credentials not found, disabling proxy auth: %v", err)
-		} else {
-			log.Printf("Found NoMAD credentails for %s\\%s in system keychain",
-				tmp.domain, tmp.username)
-			a = tmp
 		}
 	}
 

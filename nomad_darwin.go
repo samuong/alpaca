@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 	"os/exec"
 	"strings"
 
@@ -58,5 +59,6 @@ func getCredentialsFromNoMAD() (*authenticator, error) {
 	}
 	user, domain := substrs[0], substrs[1]
 	password := readPasswordFromKeychain(userPrincipal)
+	log.Printf("Found NoMAD credentails for %s\\%s in system keychain", domain, user)
 	return &authenticator{domain, user, password}, nil
 }
