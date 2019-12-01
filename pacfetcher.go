@@ -52,7 +52,8 @@ func requireOK(resp *http.Response, err error) (*http.Response, error) {
 	if err != nil {
 		return resp, err
 	} else if resp.StatusCode != http.StatusOK {
-		return resp, fmt.Errorf("expected status 200 OK, got %s", resp.Status)
+		resp.Body.Close()
+		return nil, fmt.Errorf("expected status 200 OK, got %s", resp.Status)
 	} else {
 		return resp, nil
 	}
@@ -67,9 +68,6 @@ func (pf *pacFetcher) download() []byte {
 	if err != nil {
 		// Sometimes, if we try to download too soon after a network change, the PAC
 		// download can fail. See https://github.com/samuong/alpaca/issues/8 for details.
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
-		}
 		log.Printf("Error downloading PAC file, retrying after 2 seconds: %q", err)
 		time.Sleep(2 * time.Second)
 		resp, err = requireOK(pf.client.Get(pf.pacurl))
