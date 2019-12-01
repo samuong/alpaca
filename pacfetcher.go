@@ -14,6 +14,10 @@ import (
 // The maximum size (in bytes) allowed for a PAC script. At 1 MB, this matches the limit in Chrome.
 const maxResponseBytes = 1 * 1024 * 1024
 
+// The time to wait before retrying a failed PAC download. This is similar to Chrome's delay:
+// https://cs.chromium.org/chromium/src/net/proxy_resolution/proxy_resolution_service.cc?l=96&rcl=3db5f65968c3ecab3932c1ff7367ad28834f9502
+const delayAfterFailedDownload = 2 * time.Second
+
 type pacFetcher struct {
 	pacurl     string
 	monitor    netMonitor
@@ -55,7 +59,7 @@ func (pf *pacFetcher) download() []byte {
 	resp, err := pf.client.Get(pf.pacurl)
 	if err != nil {
 		log.Printf("Error downloading PAC file, retrying after 2 seconds: %q", err)
-		time.Sleep(2 * time.Second)
+		time.Sleep(delayAfterFailedDownload)
 		resp, err = pf.client.Get(pf.pacurl)
 		if err != nil {
 			log.Printf("Error downloading PAC file, giving up: %q", err)
