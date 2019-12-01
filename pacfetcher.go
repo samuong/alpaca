@@ -57,7 +57,7 @@ func (pf *pacFetcher) download() []byte {
 	}
 	pf.connected = false
 	resp, err := pf.client.Get(pf.pacurl)
-	if err != nil {
+	if err != nil || resp.StatusCode != http.StatusOK {
 		log.Printf("Error downloading PAC file, retrying after 2 seconds: %q", err)
 		time.Sleep(delayAfterFailedDownload)
 		resp, err = pf.client.Get(pf.pacurl)

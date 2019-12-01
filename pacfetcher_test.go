@@ -22,6 +22,19 @@ func pacjsHandler(pacjs string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(pacjs)) }
 }
 
+type pacServerWhichFailsOnFirstTry struct {
+	firstTry bool
+}
+
+func (s *pacServerWhichFailsOnFirstTry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if s.firstTry {
+		s.firstTry = false
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write([]byte("test script"))
+}
+
 type fakeNetMonitor struct {
 	changed bool
 }
@@ -37,6 +50,17 @@ func TestDownload(t *testing.T) {
 	defer server.Close()
 	pf := newPACFetcher(server.URL)
 	assert.Equal(t, []byte("test script"), pf.download())
+	assert.True(t, pf.isConnected())
+}
+
+func TestDownloadFailsOnFirstTry(t *testing.T) {
+	s := &pacServerWhichFailsOnFirstTry{true}
+	server := httptest.NewServer(s)
+	defer server.Close()
+	pf := newPACFetcher(server.URL)
+	require.True(t, s.firstTry)
+	assert.Equal(t, []byte("test script"), pf.download())
+	require.False(t, s.firstTry)
 	assert.True(t, pf.isConnected())
 }
 
