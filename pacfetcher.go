@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -47,26 +48,37 @@ func newPACFetcher(pacurl string) *pacFetcher {
 	}
 }
 
+func requireOK(resp *http.Response, err error) (*http.Response, error) {
+	if err != nil {
+		return resp, err
+	} else if resp.StatusCode != http.StatusOK {
+		return resp, fmt.Errorf("expected status 200 OK, got %s", resp.Status)
+	} else {
+		return resp, nil
+	}
+}
+
 func (pf *pacFetcher) download() []byte {
 	if !pf.monitor.addrsChanged() {
 		return nil
 	}
 	pf.connected = false
-	resp, err := pf.client.Get(pf.pacurl)
-	if err != nil || resp.StatusCode != http.StatusOK {
+	resp, err := requireOK(pf.client.Get(pf.pacurl))
+	if err != nil {
+		// Sometimes, if we try to download too soon after a network change, the PAC
+		// download can fail. See https://github.com/samuong/alpaca/issues/8 for details.
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 		log.Printf("Error downloading PAC file, retrying after 2 seconds: %q", err)
 		time.Sleep(2 * time.Second)
-		resp, err = pf.client.Get(pf.pacurl)
+		resp, err = requireOK(pf.client.Get(pf.pacurl))
 		if err != nil {
 			log.Printf("Error downloading PAC file, giving up: %q", err)
 			return nil
 		}
 	}
 	defer resp.Body.Close()
-	log.Printf("GET %q returned %q", pf.pacurl, resp.Status)
-	if resp.StatusCode != http.StatusOK {
-		return nil
-	}
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, maxResponseBytes)
 	if err == io.EOF {
