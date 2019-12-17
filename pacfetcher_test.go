@@ -18,8 +18,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	// Set the retry delay to zero, so that it doesn't delay unit tests.
+	delayAfterFailedDownload = 0
+}
+
 func pacjsHandler(pacjs string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(pacjs)) }
+}
+
+type pacServerWhichFailsOnFirstTry struct {
+	count int
+}
+
+func (s *pacServerWhichFailsOnFirstTry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	s.count++
+	if s.count == 1 {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write([]byte("test script"))
 }
 
 type fakeNetMonitor struct {
@@ -37,6 +55,17 @@ func TestDownload(t *testing.T) {
 	defer server.Close()
 	pf := newPACFetcher(server.URL)
 	assert.Equal(t, []byte("test script"), pf.download())
+	assert.True(t, pf.isConnected())
+}
+
+func TestDownloadFailsOnFirstTry(t *testing.T) {
+	var s pacServerWhichFailsOnFirstTry
+	server := httptest.NewServer(&s)
+	defer server.Close()
+	pf := newPACFetcher(server.URL)
+	require.Equal(t, 0, s.count)
+	assert.Equal(t, []byte("test script"), pf.download())
+	require.Equal(t, 2, s.count)
 	assert.True(t, pf.isConnected())
 }
 

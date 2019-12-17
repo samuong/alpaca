@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -13,6 +14,10 @@ import (
 
 // The maximum size (in bytes) allowed for a PAC script. At 1 MB, this matches the limit in Chrome.
 const maxResponseBytes = 1 * 1024 * 1024
+
+// The time to wait before retrying a failed PAC download. This is similar to Chrome's delay:
+// https://cs.chromium.org/chromium/src/net/proxy_resolution/proxy_resolution_service.cc?l=96&rcl=3db5f65968c3ecab3932c1ff7367ad28834f9502
+var delayAfterFailedDownload = 2 * time.Second
 
 type pacFetcher struct {
 	pacurl     string
@@ -47,21 +52,35 @@ func newPACFetcher(pacurl string) *pacFetcher {
 	}
 }
 
+func requireOK(resp *http.Response, err error) (*http.Response, error) {
+	if err != nil {
+		return resp, err
+	} else if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("expected status 200 OK, got %s", resp.Status)
+	} else {
+		return resp, nil
+	}
+}
+
 func (pf *pacFetcher) download() []byte {
 	if !pf.monitor.addrsChanged() {
 		return nil
 	}
 	pf.connected = false
-	resp, err := pf.client.Get(pf.pacurl)
+	resp, err := requireOK(pf.client.Get(pf.pacurl))
 	if err != nil {
-		log.Printf("Error downloading PAC file: %q", err)
-		return nil
+		// Sometimes, if we try to download too soon after a network change, the PAC
+		// download can fail. See https://github.com/samuong/alpaca/issues/8 for details.
+		log.Printf("Error downloading PAC file, will retry after %v: %q",
+			delayAfterFailedDownload, err)
+		time.Sleep(delayAfterFailedDownload)
+		if resp, err = requireOK(pf.client.Get(pf.pacurl)); err != nil {
+			log.Printf("Error downloading PAC file, giving up: %q", err)
+			return nil
+		}
 	}
 	defer resp.Body.Close()
-	log.Printf("GET %q returned %q", pf.pacurl, resp.Status)
-	if resp.StatusCode != http.StatusOK {
-		return nil
-	}
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, maxResponseBytes)
 	if err == io.EOF {
