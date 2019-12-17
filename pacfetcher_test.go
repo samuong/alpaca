@@ -18,6 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	// Set the retry delay to zero, so that it doesn't delay unit tests.
+	delayAfterFailedDownload = 0
+}
+
 func pacjsHandler(pacjs string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(pacjs)) }
 }
