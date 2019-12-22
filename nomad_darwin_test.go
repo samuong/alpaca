@@ -80,32 +80,28 @@ func TestNoMADNotConfigured(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=0"}
 	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
 	_, err := getCredentialsFromNoMAD()
-	require.NotNil(t, err)
-	assert.Equal(t, "NoMAD configuration key not found.", err.Error())
+	require.Error(t, err)
 }
 
 func TestNoMADNotUsingKeychain(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=0"}
 	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
 	_, err := getCredentialsFromNoMAD()
-	require.NotNil(t, err)
-	assert.Equal(t, "NoMAD configuration key not found.", err.Error())
+	require.Error(t, err)
 }
 
 func TestNoMADNoUserPrincipal(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=0"}
 	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
 	_, err := getCredentialsFromNoMAD()
-	require.NotNil(t, err)
-	assert.Equal(t, "NoMAD configuration key not found.", err.Error())
+	require.Error(t, err)
 }
 
 func TestNoMADInvalidUserPrincipal(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=1"}
 	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
 	_, err := getCredentialsFromNoMAD()
-	require.NotNil(t, err)
-	assert.Equal(t, "Couldn't retrieve AD domain and username from NoMAD.", err.Error())
+	require.Error(t, err)
 }
 
 func TestNoMAD(t *testing.T) {
