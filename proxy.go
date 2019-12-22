@@ -114,7 +114,6 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	}
 	if err := resp.Write(client); err != nil {
 		log.Printf("[%d] Error writing response: %v", id, err)
-		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	// Kick off goroutines to copy data in each direction. Whichever goroutine finishes first
