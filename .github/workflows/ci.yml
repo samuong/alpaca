@@ -1,0 +1,67 @@
+name: Continuous Integration
+
+on: [ push ]
+
+jobs:
+  lint:
+    strategy:
+      matrix: 
+        os: [ 'macos-latest' ]
+        go: [ '1.13' ]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-go@v1
+        with:
+          go-version: ${{ matrix.go }}
+
+      - run: gofmt -l $(find . -type f -name '*.go') 2>&1
+
+  test:
+    strategy:
+      matrix: 
+        os: [ 'macos-latest', 'ubuntu-16.04' ]
+        go: [ '1.13' ]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-go@v1
+        with:
+          go-version: ${{ matrix.go }}
+
+      - run: go test ./...
+        env:
+          CGO_ENABLED: 1
+
+  build:
+    strategy:
+      matrix:
+        target:
+          - os: 'macos-latest'
+            goos: 'darwin'
+            goarch: 'amd64'
+          - os: 'ubuntu-16.04'
+            goos: 'linux'
+            goarch: 'amd64'
+        go: [ '1.13' ]
+
+    runs-on: ${{ matrix.target.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-go@v1
+        with:
+          go-version: ${{ matrix.go }}
+
+      - run: go build -v .
+        env:
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+          CGO_ENABLED: 1

@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+
+jobs:   
+  release:
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+        id: create_release
+
+      - run: echo "${{ steps.create_release.outputs.upload_url }}" > upload_url.txt
+
+      - uses: actions/upload-artifact@v1
+        with:
+          name: upload_url
+          path: upload_url.txt
+
+  build:
+    strategy:
+      matrix:
+        target:
+          - os: 'macos-latest'
+            goos: 'darwin'
+            goarch: 'amd64'
+          - os: 'ubuntu-16.04'
+            goos: 'linux'
+            goarch: 'amd64'
+        go: [ '1.13' ]
+  
+    runs-on: ${{ matrix.target.os }}
+
+    needs: [ release ]
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/setup-go@v1
+        with:
+          go-version: ${{ matrix.go }}
+    
+      - run: go build -v -o ${{ matrix.target.goos }}-${{ matrix.target.goarch }} .
+        env:
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+          CGO_ENABLED: 1
+          
+      - uses: actions/download-artifact@v1
+        with:
+          name: upload_url
+
+      - id: get_release_info
+        run: |
+          echo "##[set-output name=upload_url;]$(cat upload_url/upload_url.txt)"
+        env:
+          TAG_REF_NAME: ${{ github.ref }}
+          REPOSITORY_NAME: ${{ github.repository }}
+
+      - uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_release_info.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          asset_path: ./${{ matrix.target.goos }}-${{ matrix.target.goarch }}
+          asset_name: ${{ matrix.target.goos }}-${{ matrix.target.goarch }}
+          asset_content_type: application/zip

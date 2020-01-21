@@ -313,6 +313,7 @@ func TestWeekdayRange(t *testing.T) {
 	for _, test := range tests {
 		for i, weekday := range weekdays {
 			t.Run(test.name+" "+weekday.name, func(t *testing.T) {
+				t.Skip("Pending https://github.com/samuong/alpaca/issues/46")
 				vm := otto.New()
 				f := func(fc otto.FunctionCall) otto.Value {
 					return weekdayRange(fc, weekday.t)
