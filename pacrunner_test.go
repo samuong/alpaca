@@ -294,8 +294,8 @@ func TestWeekdayRange(t *testing.T) {
 		{"F&M ONLY", []interface{}{"FRI", "MON"}, "NYNNNYN"},
 	}
 
-	// AEST is 10 hours ahead of UTC, so 5am in AEST is 7pm on the previous day in UTC.
-	sunday, err := time.Parse(time.UnixDate, "Sun Jun 30 05:00:00 AEST 2019")
+	// The reference time is 10 hours ahead of UTC, so 5am is 7pm on the previous day in UTC.
+	sunday, err := time.Parse(time.RFC1123Z, "Sun, 30 Jun 2019 05:00:00 +1000")
 	require.NoError(t, err)
 	weekdays := []struct {
 		name string
@@ -313,7 +313,6 @@ func TestWeekdayRange(t *testing.T) {
 	for _, test := range tests {
 		for i, weekday := range weekdays {
 			t.Run(test.name+" "+weekday.name, func(t *testing.T) {
-				t.Skip("Pending https://github.com/samuong/alpaca/issues/46")
 				vm := otto.New()
 				f := func(fc otto.FunctionCall) otto.Value {
 					return weekdayRange(fc, weekday.t)
