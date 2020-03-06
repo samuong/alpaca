@@ -31,12 +31,19 @@ func init() {
 }
 
 func readDefaultForNoMAD(key string) (string, error) {
-	cmd := execCommand("defaults", "read", "com.trusourcelabs.NoMAD", key)
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
+	// check for key in managed preferences first
+	cmdManaged := execCommand("defaults", "read", "/Library/Managed Preferences/com.trusourcelabs.NoMAD.plist", key)
+	outManaged, errManaged := cmdManaged.Output()
+	if errManaged != nil {
+		// now check user preferences
+		cmdUser := execCommand("defaults", "read", "com.trusourcelabs.NoMAD", key)
+		outUser, errUser := cmdUser.Output()
+		if errUser != nil {
+			return "", errUser
+		}
+		return strings.TrimSpace(string(outUser)), nil		
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(string(outManaged)), nil
 }
 
 func readPasswordFromKeychain(userPrincipal string) string {
