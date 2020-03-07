@@ -16,10 +16,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os/exec"
 	"strings"
-	"fmt"
 
 	"github.com/keybase/go-keychain"
 )
@@ -38,11 +38,11 @@ func readDefaultForNoMAD(key string) (string, error) {
 	// Read from managed preferences first
 	out, err := execCommand("defaults", "read", mpDomain, key).Output()
 	if err != nil {
-			// Read from user preferences if not in managed preferences
-			out, err = execCommand("defaults", "read", userDomain, key).Output()
+		// Read from user preferences if not in managed preferences
+		out, err = execCommand("defaults", "read", userDomain, key).Output()
 	}
 	if err != nil {
-			return "", err
+		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
 }
