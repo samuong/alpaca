@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019,2020 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"fmt"
 
 	"github.com/keybase/go-keychain"
 )
@@ -31,19 +32,19 @@ func init() {
 }
 
 func readDefaultForNoMAD(key string) (string, error) {
-	// check for key in managed preferences first
-	cmdManaged := execCommand("defaults", "read", "/Library/Managed Preferences/com.trusourcelabs.NoMAD.plist", key)
-	outManaged, errManaged := cmdManaged.Output()
-	if errManaged != nil {
-		// now check user preferences
-		cmdUser := execCommand("defaults", "read", "com.trusourcelabs.NoMAD", key)
-		outUser, errUser := cmdUser.Output()
-		if errUser != nil {
-			return "", errUser
-		}
-		return strings.TrimSpace(string(outUser)), nil		
+	userDomain := "com.trusourcelabs.NoMAD"
+	mpDomain := fmt.Sprintf("/Library/Managed Preferences/%s.plist", userDomain)
+
+	// Read from managed preferences first
+	out, err := execCommand("defaults", "read", mpDomain, key).Output()
+	if err != nil {
+			// Read from user preferences if not in managed preferences
+			out, err = execCommand("defaults", "read", userDomain, key).Output()
 	}
-	return strings.TrimSpace(string(outManaged)), nil
+	if err != nil {
+			return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func readPasswordFromKeychain(userPrincipal string) string {
