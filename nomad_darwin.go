@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019,2020 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os/exec"
 	"strings"
@@ -31,8 +32,15 @@ func init() {
 }
 
 func readDefaultForNoMAD(key string) (string, error) {
-	cmd := execCommand("defaults", "read", "com.trusourcelabs.NoMAD", key)
-	out, err := cmd.Output()
+	userDomain := "com.trusourcelabs.NoMAD"
+	mpDomain := fmt.Sprintf("/Library/Managed Preferences/%s.plist", userDomain)
+
+	// Read from managed preferences first
+	out, err := execCommand("defaults", "read", mpDomain, key).Output()
+	if err != nil {
+		// Read from user preferences if not in managed preferences
+		out, err = execCommand("defaults", "read", userDomain, key).Output()
+	}
 	if err != nil {
 		return "", err
 	}
