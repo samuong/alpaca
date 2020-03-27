@@ -1,5 +1,7 @@
 # Alpaca
 
+![Latest Tag][2] ![GitHub Workflow Status][3] ![GitHub Releases][4]
+
 Alpaca is an HTTP/HTTPS proxy. It is designed for users of Unix tools, who
 operate inside networks that use proxy auto-configuration (PAC) files and
 require NTLM authentication.
@@ -8,15 +10,19 @@ It currently does not yet implement many important features, such as SOCKS,
 HTTP/2, and many of the predefined JS functions that PAC files use.
 Contributions are welcome, please reach out to me if you'd like to help!
 
-## Installation and Usage
+## Download Binary
 
-To download and install Alpaca, use:
+Alpaca can be downloaded from the [GitHub releases page][1].
+
+## Build from Sources
 
 ```sh
 $ go get -v -u github.com/samuong/alpaca
 ```
 
-Then start Alpaca by running the `alpaca` binary.
+## Usage
+
+Start Alpaca by running the `alpaca` binary.
 
 If your proxy requires NTLM authentication, you'll need to supply your domain and
 username (via command-line flags) and a password (via a prompt):
@@ -48,3 +54,8 @@ vice-versa), the proxies listed in the PAC script might become unreachable.
 When this happens, Alpaca will temporarily bypass the parent proxy and send
 requests directly, so there's no need to manually unset/re-set `http_proxy` and
 `https_proxy` as you move between networks.
+
+[1]: https://github.com/samuong/alpaca/releases
+[2]: https://img.shields.io/github/v/tag/samuong/alpaca.svg?logo=github&label=latest
+[3]: https://img.shields.io/github/workflow/status/samuong/alpaca/Continuous%20Integration/master
+[4]: https://img.shields.io/github/downloads/samuong/alpaca/latest/total
