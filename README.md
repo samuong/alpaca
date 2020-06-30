@@ -5,15 +5,30 @@
 Alpaca is a local HTTP proxy for command-line tools. It supports proxy
 auto-configuration (PAC) files and NTLM authentication.
 
-## Download Binary
+## Install using Homebrew
 
-Alpaca can be downloaded from the [GitHub releases page][1].
+If you're using macOS and use [Homebrew](https://brew.sh/), you can install
+using:
 
-## Build from Sources
+```sh
+$ brew tap samuong/alpaca
+$ brew install samuong/alpaca/alpaca
+```
+
+Launch Alpaca by running `alpaca`, or by using `brew services start alpaca`.
+
+## Install using Go
+
+If you've got the [Go](https://golang.org/cmd/go/) tool installed, you can
+install using:
 
 ```sh
 $ go get -v -u github.com/samuong/alpaca
 ```
+
+## Download Binary
+
+Alpaca can be downloaded from the [GitHub releases page][1].
 
 ## Usage
 
@@ -38,8 +53,8 @@ You also need to configure your tools to send requests via Alpaca. Usually this
 will require setting the `http_proxy` and `https_proxy` environment variables:
 
 ```sh
-$ export http_proxy=localhost:3128
-$ export https_proxy=localhost:3128
+$ export http_proxy=http://localhost:3128
+$ export https_proxy=http://localhost:3128
 $ curl -s https://raw.githubusercontent.com/samuong/alpaca/master/README.md
 # Alpaca
 ...
