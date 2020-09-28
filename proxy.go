@@ -98,7 +98,6 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		log.Printf("[%d] Error hijacking connection: %v", id, err)
 		w.WriteHeader(http.StatusInternalServerError)
-		server.Close()
 		return
 	}
 	clientCloser := cancelable.NewCloser(client)
