@@ -69,7 +69,7 @@ func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// Establish a connection to the server, or an upstream proxy.
 	u, err := ph.transport.Proxy(req)
-	id := req.Context().Value("id")
+	id := req.Context().Value(contextKeyID)
 	if err != nil {
 		log.Printf("[%d] Error finding proxy for %v: %v", id, req.Host, err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -127,7 +127,7 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.Conn, error) {
 	// can't hijack the connection to server, so can't just replay request via a Transport
 	// need to dial and manually write connect header and read response
-	id := req.Context().Value("id")
+	id := req.Context().Value(contextKeyID)
 	conn, err := net.Dial("tcp", proxy)
 	if err != nil {
 		log.Printf("[%d] Error dialling %s: %v", id, proxy, err)
@@ -171,7 +171,7 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
 	// Make a copy of the request body, in case we have to replay it (for authentication)
 	var buf bytes.Buffer
-	id := req.Context().Value("id")
+	id := req.Context().Value(contextKeyID)
 	if n, err := io.Copy(&buf, req.Body); err != nil {
 		log.Printf("[%d] Error copying request body (got %d/%d): %v",
 			id, n, req.ContentLength, err)

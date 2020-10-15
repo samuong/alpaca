@@ -76,7 +76,7 @@ func (pf *ProxyFinder) checkForUpdates() {
 }
 
 func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) {
-	id := req.Context().Value("id")
+	id := req.Context().Value(contextKeyID)
 	if pf.fetcher == nil {
 		log.Printf(`[%d] %s %s via "DIRECT"`, id, req.Method, req.URL)
 		return nil, nil
