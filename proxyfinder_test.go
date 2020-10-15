@@ -48,7 +48,8 @@ func TestFindProxyForRequest(t *testing.T) {
 			pw := NewPACWrapper(PACData{Port: 1})
 			pf := NewProxyFinder(server.URL, pw)
 			req := httptest.NewRequest(http.MethodGet, "https://www.test", nil)
-			req = req.WithContext(context.WithValue(req.Context(), "id", i))
+			ctx := context.WithValue(req.Context(), contextKeyID, i)
+			req = req.WithContext(ctx)
 			proxy, err := pf.findProxyForRequest(req)
 			if test.expectError {
 				assert.NotNil(t, err)

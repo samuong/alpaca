@@ -34,7 +34,7 @@ func TestRequestLogger(t *testing.T) {
 	}{
 		"No Status":    {0, nil, "[<nil>] 200 GET /"},
 		"Given Status": {http.StatusNotFound, nil, "[<nil>] 404 GET /"},
-		"Context":      {http.StatusOK, AddContextID, "[0] 200 GET /"},
+		"Context":      {http.StatusOK, AddContextID, "[1] 200 GET /"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
