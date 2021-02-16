@@ -16,6 +16,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,12 +33,13 @@ import (
 type ProxyHandler struct {
 	transport *http.Transport
 	auth      *authenticator
+	block     func(string)
 }
 
 type proxyFunc func(*http.Request) (*url.URL, error)
 
-func NewProxyHandler(proxy proxyFunc, auth *authenticator) ProxyHandler {
-	return ProxyHandler{&http.Transport{Proxy: proxy}, auth}
+func NewProxyHandler(proxy proxyFunc, auth *authenticator, block func(string)) ProxyHandler {
+	return ProxyHandler{&http.Transport{Proxy: proxy}, auth, block}
 }
 
 func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
@@ -79,6 +82,10 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 		server, err = net.Dial("tcp", req.Host)
 	} else {
 		server, err = connectViaProxy(req, u.Host, ph.auth)
+		var dialErr *dialError
+		if errors.As(err, &dialErr) {
+			ph.block(u.Host)
+		}
 	}
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
@@ -127,7 +134,7 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 	id := req.Context().Value(contextKeyID)
 	var tr transport
 	defer tr.Close()
-	if err := tr.dial("tcp", proxy) ; err != nil {
+	if err := tr.dial("tcp", proxy); err != nil {
 		log.Printf("[%d] Error dialling %s: %v", id, proxy, err)
 		return nil, err
 	}
@@ -167,6 +174,11 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	req.Body = ioutil.NopCloser(rd)
 	resp, err := ph.transport.RoundTrip(req)
 	if err != nil {
+		var dialErr *dialError
+		if errors.As(err, &dialErr) && dialErr.address != req.Host {
+			// Failed to dial the proxy; add it to the bad list.
+			ph.block(dialErr.address)
+		}
 		log.Printf("[%d] Error forwarding request: %v", id, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -238,4 +250,25 @@ func copyResponseHeaders(w http.ResponseWriter, resp *http.Response) {
 	w.Header().Del("Trailer")
 	w.Header().Del("Transfer-Encoding")
 	w.Header().Del("Upgrade")
+}
+
+type dialError struct {
+	network, address string
+	err              error
+}
+
+func (e *dialError) Error() string {
+	return fmt.Sprintf("error while dialing %q %q: %s", e.network, e.address, e.err.Error())
+}
+
+func (e *dialError) Unwrap() error {
+	return e.err
+}
+
+func dialContext(ignored context.Context, network, address string) (net.Conn, error) {
+	conn, err := net.Dial(network, address)
+	if err != nil {
+		return conn, &dialError{network, address, err}
+	}
+	return conn, nil
 }
