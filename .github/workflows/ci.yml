@@ -3,6 +3,8 @@ name: Continuous Integration
 on:
   push:
     branches: '**'
+    pull_request:
+      - master
     tags-ignore: '**'
 
 jobs:
