@@ -6,10 +6,10 @@ on:
     tags:
       - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
 
-jobs:   
+jobs:
   release:
     runs-on: macos-latest
-    
+
     steps:
       - uses: actions/create-release@v1
         env:
@@ -35,11 +35,17 @@ jobs:
           - os: 'macos-latest'
             goos: 'darwin'
             goarch: 'amd64'
-          - os: 'ubuntu-16.04'
+          - os: 'macos-latest'
+            goos: 'darwin'
+            goarch: 'arm64'
+          - os: 'ubuntu-latest'
             goos: 'linux'
             goarch: 'amd64'
-        go: [ '1.13' ]
-  
+          - os: 'ubuntu-latest'
+            goos: 'windows'
+            goarch: 'amd64'
+        go: [ '1.16' ]
+
     runs-on: ${{ matrix.target.os }}
 
     needs: [ release ]
@@ -50,13 +56,23 @@ jobs:
       - uses: actions/setup-go@v1
         with:
           go-version: ${{ matrix.go }}
-    
+
+      # xcode required until github macos runner is 11.x based
+      - uses: maxim-lobanov/setup-xcode@v1
+        if: matrix.target.goos == 'darwin' && matrix.target.goarch == 'arm64'
+        with:
+          xcode-version: latest
+
+      - if: matrix.target.goos == 'darwin' && matrix.target.goarch == 'arm64'
+        run: |
+          echo SDKROOT=$(xcrun --sdk macosx --show-sdk-path) >> $GITHUB_ENV
+
       - run: go build -v -o ${{ matrix.target.goos }}-${{ matrix.target.goarch }} .
         env:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: 1
-          
+
       - uses: actions/download-artifact@v1
         with:
           name: upload_url
