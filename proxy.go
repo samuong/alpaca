@@ -30,7 +30,7 @@ import (
 	"github.com/samuong/alpaca/cancelable"
 )
 
-type ProxyHandler struct {
+type proxyHandler struct {
 	transport *http.Transport
 	auth      *authenticator
 	block     func(string)
@@ -38,11 +38,11 @@ type ProxyHandler struct {
 
 type proxyFunc func(*http.Request) (*url.URL, error)
 
-func NewProxyHandler(proxy proxyFunc, auth *authenticator, block func(string)) ProxyHandler {
-	return ProxyHandler{&http.Transport{Proxy: proxy}, auth, block}
+func newProxyHandler(proxy proxyFunc, auth *authenticator, block func(string)) proxyHandler {
+	return proxyHandler{&http.Transport{Proxy: proxy}, auth, block}
 }
 
-func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
+func (ph proxyHandler) wrapHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		// Pass CONNECT requests and absolute-form URIs to the ProxyHandler.
 		// If the request URL has a scheme, it is an absolute-form URI
@@ -59,7 +59,7 @@ func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
 	})
 }
 
-func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (ph proxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	deleteRequestHeaders(req)
 	if req.Method == http.MethodConnect {
 		ph.handleConnect(w, req)
@@ -68,7 +68,7 @@ func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
+func (ph proxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// Establish a connection to the server, or an upstream proxy.
 	u, err := ph.transport.Proxy(req)
 	id := req.Context().Value(contextKeyID)
@@ -160,7 +160,7 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 	return tr.hijack(), nil
 }
 
-func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
+func (ph proxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
 	// Make a copy of the request body, in case we have to replay it (for authentication)
 	var buf bytes.Buffer
 	id := req.Context().Value(contextKeyID)

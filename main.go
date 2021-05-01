@@ -70,17 +70,17 @@ func main() {
 		}
 	}
 
-	pacWrapper := NewPACWrapper(PACData{Port: *port})
-	proxyFinder := NewProxyFinder(pacURL, pacWrapper)
-	proxyHandler := NewProxyHandler(proxyFinder.findProxyForRequest, a, proxyFinder.blockProxy)
+	pacWrapper := newPACWrapper(*port)
+	proxyFinder := newProxyFinder(pacURL, pacWrapper)
+	proxyHandler := newProxyHandler(proxyFinder.findProxyForRequest, a, proxyFinder.blockProxy)
 	mux := http.NewServeMux()
-	pacWrapper.SetupHandlers(mux)
+	pacWrapper.setupHandlers(mux)
 
 	// build the handler by wrapping middleware upon middleware
 	var handler http.Handler = mux
 	handler = RequestLogger(handler)
-	handler = proxyHandler.WrapHandler(handler)
-	handler = proxyFinder.WrapHandler(handler)
+	handler = proxyHandler.wrapHandler(handler)
+	handler = proxyFinder.wrapHandler(handler)
 	handler = AddContextID(handler)
 
 	s := &http.Server{

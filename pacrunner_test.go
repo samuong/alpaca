@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,10 +27,10 @@ import (
 )
 
 func TestDirect(t *testing.T) {
-	var pr PACRunner
+	var pr pacRunner
 	pacjs := []byte(`function FindProxyForURL(url, host) { return "DIRECT" }`)
-	require.NoError(t, pr.Update(pacjs))
-	proxy, err := pr.FindProxyForURL(&url.URL{Scheme: "https", Host: "anz.com"})
+	require.NoError(t, pr.update(pacjs))
+	proxy, err := pr.findProxyForURL(&url.URL{Scheme: "https", Host: "anz.com"})
 	require.NoError(t, err)
 	assert.Equal(t, "DIRECT", proxy)
 }
@@ -45,13 +45,13 @@ func TestPathAndQueryStripping(t *testing.T) {
 		{"https with fragment", "https://anz.com/#fragment", "https://anz.com"},
 	}
 	for _, test := range tests {
-		var pr PACRunner
+		var pr pacRunner
 		pacjs := []byte("function FindProxyForURL(url, host) { return url }")
-		require.NoError(t, pr.Update(pacjs))
+		require.NoError(t, pr.update(pacjs))
 		t.Run(test.name, func(t *testing.T) {
 			u, err := url.Parse(test.input)
 			require.NoError(t, err)
-			proxy, err := pr.FindProxyForURL(u)
+			proxy, err := pr.findProxyForURL(u)
 			require.NoError(t, err)
 			assert.Equal(t, test.expected, proxy)
 		})

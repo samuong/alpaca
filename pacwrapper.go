@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,16 +22,12 @@ import (
 )
 
 // PACData contains program configuration to be made available to the pacWrapTmpl.
-type PACData struct {
-	Port int
-}
-
 type pacData struct {
-	PACData
+	Port int
 	UpstreamPAC string
 }
 
-type PACWrapper struct {
+type pacWrapper struct {
 	data      pacData
 	tmpl      *template.Template
 	alpacaPAC string
@@ -52,12 +48,12 @@ function FindProxyForURL(url, host) {
 }
 `
 
-func NewPACWrapper(data PACData) *PACWrapper {
+func newPACWrapper(port int) *pacWrapper {
 	t := template.Must(template.New("alpaca").Parse(pacWrapTmpl))
-	return &PACWrapper{pacData{data, ""}, t, ""}
+	return &pacWrapper{pacData{port, ""}, t, ""}
 }
 
-func (pw *PACWrapper) Wrap(pacjs []byte) {
+func (pw *pacWrapper) wrap(pacjs []byte) {
 	pac := string(pacjs)
 	if pac == pw.data.UpstreamPAC && pw.alpacaPAC != "" {
 		return
@@ -71,11 +67,11 @@ func (pw *PACWrapper) Wrap(pacjs []byte) {
 	pw.alpacaPAC = b.String()
 }
 
-func (pw *PACWrapper) SetupHandlers(mux *http.ServeMux) {
+func (pw *pacWrapper) setupHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/alpaca.pac", pw.handlePAC)
 }
 
-func (pw *PACWrapper) handlePAC(w http.ResponseWriter, req *http.Request) {
+func (pw *pacWrapper) handlePAC(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return

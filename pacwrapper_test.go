@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,25 +25,25 @@ import (
 )
 
 func TestWrapPAC(t *testing.T) {
-	pw := NewPACWrapper(PACData{Port: 1234})
+	pw := newPACWrapper(1234)
 	pac := `function FindProxyForURL(url, host) { return "DIRECT" }`
-	pw.Wrap([]byte(pac))
+	pw.wrap([]byte(pac))
 	assert.Contains(t, pw.alpacaPAC, pac)
 	assert.Contains(t, pw.alpacaPAC, `"DIRECT" : "PROXY localhost:1234"`)
 }
 
 func TestWrapEmptyPAC(t *testing.T) {
-	pw := NewPACWrapper(PACData{Port: 1234})
-	pw.Wrap(nil)
+	pw := newPACWrapper(1234)
+	pw.wrap(nil)
 	assert.Contains(t, pw.alpacaPAC, `return "DIRECT"`)
 }
 
 func TestPACServe(t *testing.T) {
-	pw := NewPACWrapper(PACData{Port: 1234})
+	pw := newPACWrapper(1234)
 	pac := `function FindProxyForURL(url, host) { return "DIRECT" }`
-	pw.Wrap([]byte(pac))
+	pw.wrap([]byte(pac))
 	mux := http.NewServeMux()
-	pw.SetupHandlers(mux)
+	pw.setupHandlers(mux)
 	server := httptest.NewServer(mux)
 	defer server.Close()
 

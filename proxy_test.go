@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -53,16 +53,16 @@ func (tp testProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	tp.delegate.ServeHTTP(w, req)
 }
 
-func newDirectProxy() ProxyHandler {
-	return NewProxyHandler(
+func newDirectProxy() proxyHandler {
+	return newProxyHandler(
 		func(r *http.Request) (*url.URL, error) { return nil, nil },
 		nil,
 		func(string) {},
 	)
 }
 
-func newChildProxy(parent *httptest.Server) ProxyHandler {
-	return NewProxyHandler(func(r *http.Request) (*url.URL, error) {
+func newChildProxy(parent *httptest.Server) proxyHandler {
+	return newProxyHandler(func(r *http.Request) (*url.URL, error) {
 		return &url.URL{Host: parent.Listener.Addr().String()}, nil
 	}, nil, func(string) {})
 }
@@ -96,7 +96,7 @@ func TestGetViaProxy(t *testing.T) {
 	defer server.Close()
 	// Proxy request should not go to the mux. The empty mux will always return 404.
 	mux := http.NewServeMux()
-	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().WrapHandler(mux)})
+	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().wrapHandler(mux)})
 	defer proxy.Close()
 	tr := &http.Transport{Proxy: proxyServer(t, proxy)}
 	testGetRequest(t, tr, server.URL)
@@ -111,7 +111,7 @@ func TestGetOverTlsViaProxy(t *testing.T) {
 	defer server.Close()
 	// Proxy request should not go to the mux. The empty mux will always return 404.
 	mux := http.NewServeMux()
-	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().WrapHandler(mux)})
+	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().wrapHandler(mux)})
 	defer proxy.Close()
 	tr := &http.Transport{Proxy: proxyServer(t, proxy), TLSClientConfig: tlsConfig(server)}
 	testGetRequest(t, tr, server.URL)
@@ -127,7 +127,7 @@ func TestGetOriginURLsNotProxied(t *testing.T) {
 		_, err := w.Write([]byte("Hello, client\n"))
 		require.NoError(t, err)
 	})
-	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().WrapHandler(mux)})
+	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().wrapHandler(mux)})
 	defer proxy.Close()
 	testGetRequest(t, &http.Transport{}, proxy.URL+"/origin")
 	require.Len(t, requests, 1)

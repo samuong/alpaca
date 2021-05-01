@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,12 +29,12 @@ import (
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file
 
-type PACRunner struct {
+type pacRunner struct {
 	vm *otto.Otto
 	sync.Mutex
 }
 
-func (pr *PACRunner) Update(pacjs []byte) error {
+func (pr *pacRunner) update(pacjs []byte) error {
 	vm := otto.New()
 	var err error
 	set := func(name string, handler func(otto.FunctionCall) otto.Value) {
@@ -73,7 +73,7 @@ func (pr *PACRunner) Update(pacjs []byte) error {
 	return nil
 }
 
-func (pr *PACRunner) FindProxyForURL(u *url.URL) (string, error) {
+func (pr *pacRunner) findProxyForURL(u *url.URL) (string, error) {
 	pr.Lock()
 	defer pr.Unlock()
 	if u.Scheme == "https" || u.Scheme == "wss" {
