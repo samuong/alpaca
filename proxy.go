@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io"
@@ -125,37 +124,24 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 }
 
 func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.Conn, error) {
-	// can't hijack the connection to server, so can't just replay request via a Transport
-	// need to dial and manually write connect header and read response
 	id := req.Context().Value(contextKeyID)
-	conn, err := net.Dial("tcp", proxy)
-	if err != nil {
+	var tr transport
+	defer tr.Close()
+	if err := tr.dial("tcp", proxy) ; err != nil {
 		log.Printf("[%d] Error dialling %s: %v", id, proxy, err)
 		return nil, err
 	}
-	closer := cancelable.NewCloser(conn)
-	defer closer.Close()
-	if err := req.Write(conn); err != nil {
-		log.Printf("[%d] Error sending CONNECT request: %v", id, err)
-		return nil, err
-	}
-	rd := bufio.NewReader(conn)
-	resp, err := http.ReadResponse(rd, req)
+	resp, err := tr.RoundTrip(req)
 	if err != nil {
 		log.Printf("[%d] Error reading CONNECT response: %v", id, err)
 		return nil, err
 	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		resp.Body.Close()
-		closer.Close()
-		conn, err = net.Dial("tcp", proxy)
-		if err != nil {
-			log.Printf("[%d] Error dialling %s (during retry): %v", id, proxy, err)
+		if err := tr.dial("tcp", proxy); err != nil {
+			log.Printf("[%d] Error re-dialling %s: %v", id, proxy, err)
 			return nil, err
 		}
-		closer = cancelable.NewCloser(conn)
-		defer closer.Close()
-		rd = bufio.NewReader(conn)
-		resp, err = auth.connect(req, conn, rd)
+		resp, err = auth.do(req, &tr)
 		if err != nil {
 			return nil, err
 		}
@@ -164,8 +150,7 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("[%d] Unexpected response status: %s", id, resp.Status)
 	}
-	closer.Cancel()
-	return conn, nil
+	return tr.hijack(), nil
 }
 
 func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
