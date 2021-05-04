@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,10 +38,11 @@ func init() {
 }
 
 func pacjsHandler(pacjs string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(pacjs)) }
+	return func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(pacjs)) }
 }
 
 type pacServerWhichFailsOnFirstTry struct {
+	t     *testing.T
 	count int
 }
 
@@ -51,7 +52,8 @@ func (s *pacServerWhichFailsOnFirstTry) ServeHTTP(w http.ResponseWriter, req *ht
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.Write([]byte("test script"))
+	_, err := w.Write([]byte("test script"))
+	require.NoError(s.t, err)
 }
 
 type fakeNetMonitor struct {
@@ -73,8 +75,8 @@ func TestDownload(t *testing.T) {
 }
 
 func TestDownloadFailsOnFirstTry(t *testing.T) {
-	var s pacServerWhichFailsOnFirstTry
-	server := httptest.NewServer(&s)
+	s := &pacServerWhichFailsOnFirstTry{t: t, count: 0}
+	server := httptest.NewServer(s)
 	defer server.Close()
 	pf := newPACFetcher(server.URL)
 	require.Equal(t, 0, s.count)

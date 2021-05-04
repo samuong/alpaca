@@ -27,7 +27,8 @@ import (
 
 func TestTransport(t *testing.T) {
 	handler := func(w http.ResponseWriter, req *http.Request) {
-		w.Write([]byte("It works!"))
+		_, err := w.Write([]byte("It works!"))
+		require.NoError(t, err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(handler))
 	defer server.Close()

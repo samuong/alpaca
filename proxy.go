@@ -126,8 +126,8 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// prevents any goroutine from blocking indefinitely (which will leak a file descriptor).
 	serverCloser.Cancel()
 	clientCloser.Cancel()
-	go func() { io.Copy(server, client); server.Close() }()
-	go func() { io.Copy(client, server); client.Close() }()
+	go func() { _, _ = io.Copy(server, client); server.Close() }()
+	go func() { _, _ = io.Copy(client, server); client.Close() }()
 }
 
 func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.Conn, error) {
