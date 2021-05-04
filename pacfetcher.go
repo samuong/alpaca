@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -50,7 +51,11 @@ func newPACFetcher(pacurl string) *pacFetcher {
 	client := &http.Client{Timeout: 30 * time.Second}
 	if strings.HasPrefix(pacurl, "file:") {
 		log.Printf("Warning: Alpaca supports file:// PAC URLs, but Windows and macOS don't")
-		client.Transport = http.NewFileTransport(http.Dir("/"))
+		if runtime.GOOS == "windows" {
+			client.Transport = http.NewFileTransport(http.Dir("C:"))
+		} else {
+			client.Transport = http.NewFileTransport(http.Dir("/"))
+		}
 	} else {
 		// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy
 		// environment variable, which could be pointing at this instance of alpaca. When
