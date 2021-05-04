@@ -16,7 +16,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -265,12 +264,4 @@ func (e *dialError) Error() string {
 
 func (e *dialError) Unwrap() error {
 	return e.err
-}
-
-func dialContext(_ context.Context, network, address string) (net.Conn, error) {
-	conn, err := net.Dial(network, address)
-	if err != nil {
-		return conn, &dialError{network, address, err}
-	}
-	return conn, nil
 }
