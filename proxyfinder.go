@@ -24,8 +24,6 @@ import (
 	"sync"
 )
 
-var errNoProxiesAvailable = errors.New("no proxies available")
-
 type ProxyFinder struct {
 	runner  *PACRunner
 	fetcher *pacFetcher
@@ -93,6 +91,7 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 	if err != nil {
 		return nil, err
 	}
+	var fallback *url.URL
 	for _, elem := range strings.Split(str, ";") {
 		fields := strings.Fields(strings.TrimSpace(elem))
 		if len(fields) == 1 && fields[0] == "DIRECT" {
@@ -107,6 +106,9 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 				proxy.Host = net.JoinHostPort(proxy.Host, "80")
 			}
 			if pf.blocked.contains(proxy.Host) {
+				if fallback == nil {
+					fallback = proxy
+				}
 				continue
 			}
 			log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, elem)
@@ -114,7 +116,12 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 		}
 		log.Printf("[%d] Couldn't parse proxy: %q", id, elem)
 	}
-	return nil, errNoProxiesAvailable
+	if fallback != nil {
+		// All the proxies are currently blocked. In this case, we'll temporarily ignore the
+		// blocklist and fall back to the first proxy that we saw (and skipped).
+		return fallback, nil
+	}
+	return nil, errors.New("no proxies available")
 }
 
 func (pf *ProxyFinder) blockProxy(proxy string) {

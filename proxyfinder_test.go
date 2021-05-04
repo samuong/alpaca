@@ -103,6 +103,7 @@ func TestSkipBadProxies(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "backup:80", proxy.Host)
 	pf.blocked.add("backup:80")
-	_, err = pf.findProxyForRequest(req)
-	assert.Error(t, err)
+	proxy, err = pf.findProxyForRequest(req)
+	require.NoError(t, err)
+	assert.Equal(t, "primary:80", proxy.Host)
 }
