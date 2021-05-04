@@ -11,7 +11,7 @@ jobs:
   format:
     strategy:
       matrix: 
-        os: [ 'macos-latest' ]
+        os: [ 'ubuntu-latest' ]
         go: [ '1.16' ]
 
     runs-on: ${{ matrix.os }}
@@ -35,7 +35,7 @@ jobs:
   test:
     strategy:
       matrix: 
-        os: [ 'macos-latest', 'ubuntu-latest' ]
+        os: [ 'macos-latest', 'ubuntu-latest', 'windows-latest' ]
         go: [ '1.16' ]
 
     runs-on: ${{ matrix.os }}
@@ -65,7 +65,7 @@ jobs:
           - os: 'ubuntu-latest'
             goos: 'linux'
             goarch: 'amd64'
-          - os: 'ubuntu-latest'
+          - os: 'windows-latest'
             goos: 'windows'
             goarch: 'amd64'
         go: [ '1.16' ]

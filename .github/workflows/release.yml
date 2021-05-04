@@ -8,7 +8,7 @@ on:
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/create-release@v1
@@ -41,7 +41,7 @@ jobs:
           - os: 'ubuntu-latest'
             goos: 'linux'
             goarch: 'amd64'
-          - os: 'ubuntu-latest'
+          - os: 'windows-latest'
             goos: 'windows'
             goarch: 'amd64'
         go: [ '1.16' ]
