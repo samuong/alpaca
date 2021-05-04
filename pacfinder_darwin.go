@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,24 +20,10 @@ import (
 	"io"
 	"log"
 	"os/exec"
-	"runtime"
 	"strings"
 )
 
 func findPACURL() (string, error) {
-	switch runtime.GOOS {
-	case "darwin":
-		return findPACURLForDarwin()
-	case "windows":
-		return findPACURLForWindows()
-	default:
-		// Hopefully Linux, FreeBSD, Solaris, etc. will have GNOME 3 installed...
-		// TODO: Figure out how to do this for KDE.
-		return findPACURLForGNOME()
-	}
-}
-
-func findPACURLForDarwin() (string, error) {
 	cmd := exec.Command("networksetup", "-listallnetworkservices")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -100,18 +86,4 @@ func getAutoProxyURL(networkService string) (string, error) {
 		return strings.TrimSuffix(strings.TrimPrefix(line, "URL: "), "\n"), nil
 	}
 	return "", fmt.Errorf("No auto-proxy URL for network service %v", networkService)
-}
-
-func findPACURLForWindows() (string, error) {
-	// TODO: Implement this.
-	return "", nil
-}
-
-func findPACURLForGNOME() (string, error) {
-	cmd := exec.Command("gsettings", "get", "org.gnome.system.proxy", "autoconfig-url")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.Trim(string(out), "'\n"), nil
 }

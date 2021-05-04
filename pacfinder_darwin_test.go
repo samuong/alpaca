@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFindPACURLForDarwin(t *testing.T) {
+func TestFindPACURL(t *testing.T) {
 	dir, err := ioutil.TempDir("", "alpaca")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
@@ -73,46 +73,18 @@ fi
 exit 0`
 	require.NoError(t, ioutil.WriteFile(tmpfn, []byte(mockcmd), 0700))
 
-	pacURL, err := findPACURLForDarwin()
+	pacURL, err := findPACURL()
 	require.NoError(t, err)
 	assert.Equal(t, "http://internal.anz.com/proxy.pac", pacURL)
 }
 
-func TestFindPACURLForDarwinWhenNetworkSetupIsntAvailable(t *testing.T) {
+func TestFindPACURLWhenNetworkSetupIsntAvailable(t *testing.T) {
 	dir, err := ioutil.TempDir("", "alpaca")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
 	defer require.NoError(t, os.Setenv("PATH", oldpath))
 	require.NoError(t, os.Setenv("PATH", dir))
-	_, err = findPACURLForDarwin()
-	require.NotNil(t, err)
-}
-
-func TestFindPACURLForGNOME(t *testing.T) {
-	dir, err := ioutil.TempDir("", "alpaca")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
-	oldpath := os.Getenv("PATH")
-	defer require.NoError(t, os.Setenv("PATH", oldpath))
-
-	require.NoError(t, os.Setenv("PATH", dir))
-	tmpfn := filepath.Join(dir, "gsettings")
-	mockcmd := "#!/bin/sh\necho \\'http://internal.anz.com/proxy.pac\\'\n"
-	require.NoError(t, ioutil.WriteFile(tmpfn, []byte(mockcmd), 0700))
-
-	pacURL, err := findPACURLForGNOME()
-	require.NoError(t, err)
-	assert.Equal(t, "http://internal.anz.com/proxy.pac", pacURL)
-}
-
-func TestFindPACURLForGNOMEWhenGsettingsIsntAvailable(t *testing.T) {
-	dir, err := ioutil.TempDir("", "alpaca")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
-	oldpath := os.Getenv("PATH")
-	defer require.NoError(t, os.Setenv("PATH", oldpath))
-	require.NoError(t, os.Setenv("PATH", dir))
-	_, err = findPACURLForGNOME()
+	_, err = findPACURL()
 	require.NotNil(t, err)
 }
