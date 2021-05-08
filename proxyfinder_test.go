@@ -25,6 +25,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type fakeNetMonitor struct {
+	changed bool
+}
+
+/*
+func (nm *fakeNetMonitor) addrsChanged() bool {
+	tmp := nm.changed
+	nm.changed = false
+	return tmp
+}
+*/
+
+/*
+func TestDownloadWithNetworkChanges(t *testing.T) {
+	// Initially, the download succeeds and we are connected (to the PAC server).
+	s1 := httptest.NewServer(http.HandlerFunc(pacjsHandler("test script 1")))
+	nm := &fakeNetMonitor{true}
+	pf := newPACFetcher(s1.URL)
+	pf.monitor = nm
+	assert.Equal(t, []byte("test script 1"), pf.download())
+	assert.True(t, pf.isConnected())
+	// Try again. Nothing changed, so we don't get a new script, but are still connected.
+	assert.Nil(t, pf.download())
+	assert.True(t, pf.isConnected())
+	// Disconnect from the network.
+	s1.Close()
+	nm.changed = true
+	assert.Nil(t, pf.download())
+	assert.False(t, pf.isConnected())
+	// Connect to a new network.
+	s2 := httptest.NewServer(http.HandlerFunc(pacjsHandler("test script 2")))
+	defer s2.Close()
+	nm.changed = true
+	pf.pacurl = s2.URL
+	assert.Equal(t, []byte("test script 2"), pf.download())
+	assert.True(t, pf.isConnected())
+}
+*/
+
 func TestFindProxyForRequest(t *testing.T) {
 	tests := []struct {
 		name        string

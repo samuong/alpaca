@@ -29,11 +29,16 @@ type ProxyFinder struct {
 	fetcher *pacFetcher
 	wrapper *PACWrapper
 	blocked *blocklist
+	monitor netMonitor
 	sync.Mutex
 }
 
 func NewProxyFinder(pacurl string, wrapper *PACWrapper) *ProxyFinder {
-	pf := &ProxyFinder{wrapper: wrapper, blocked: newBlocklist()}
+	pf := &ProxyFinder{
+		wrapper: wrapper,
+		blocked: newBlocklist(),
+		monitor: newNetMonitor(),
+	}
 	if len(pacurl) == 0 {
 		log.Println("No PAC URL specified or detected; all requests will be made directly")
 	} else if _, err := url.Parse(pacurl); err != nil {
@@ -60,6 +65,9 @@ func (pf *ProxyFinder) WrapHandler(next http.Handler) http.Handler {
 func (pf *ProxyFinder) checkForUpdates() {
 	pf.Lock()
 	defer pf.Unlock()
+	if !pf.monitor.addrsChanged() {
+		return
+	}
 	pacjs := pf.fetcher.download()
 	if pacjs == nil {
 		if !pf.fetcher.isConnected() {

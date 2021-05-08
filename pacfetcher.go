@@ -16,11 +16,9 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"runtime"
 	"strings"
@@ -36,9 +34,7 @@ var delayAfterFailedDownload = 2 * time.Second
 
 type pacFetcher struct {
 	pacurl     string
-	monitor    netMonitor
 	client     *http.Client
-	lookupAddr func(context.Context, string) ([]string, error)
 	connected  bool
 	//cache  []byte
 	//modified time.Time
@@ -65,9 +61,7 @@ func newPACFetcher(pacurl string) *pacFetcher {
 	}
 	return &pacFetcher{
 		pacurl:     pacurl,
-		monitor:    newNetMonitor(),
 		client:     client,
-		lookupAddr: net.DefaultResolver.LookupAddr,
 	}
 }
 
@@ -83,9 +77,6 @@ func requireOK(resp *http.Response, err error) (*http.Response, error) {
 }
 
 func (pf *pacFetcher) download() []byte {
-	if !pf.monitor.addrsChanged() {
-		return nil
-	}
 	pf.connected = false
 	resp, err := requireOK(pf.client.Get(pf.pacurl))
 	if err != nil {
@@ -103,23 +94,7 @@ func (pf *pacFetcher) download() []byte {
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, maxResponseBytes)
 	if err == io.EOF {
-		if strings.HasPrefix(pf.pacurl, "file:") {
-			// When using a local PAC file the online/offline status can't be determined
-			// by the fact that the PAC file is returned. Instead try reverse DNS
-			// resolution of Google's Public DNS Servers.
-			const timeout = 2 * time.Second
-			ctx, cancel := context.WithTimeout(context.TODO(), timeout)
-			defer cancel()
-			_, err1 := pf.lookupAddr(ctx, "8.8.8.8")
-			_, err2 := pf.lookupAddr(ctx, "2001:4860:4860::8888")
-			if err1 == nil || err2 == nil {
-				log.Printf("Successfully resolved public address; bypassing proxy")
-			} else {
-				pf.connected = true
-			}
-		} else {
-			pf.connected = true
-		}
+		pf.connected = true
 		return buf.Bytes()
 	} else if err != nil {
 		log.Printf("Error reading PAC JS from response body: %q", err)
