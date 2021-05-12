@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -29,11 +28,12 @@ type ProxyFinder struct {
 	runner  *PACRunner
 	fetcher *pacFetcher
 	wrapper *PACWrapper
+	blocked *blocklist
 	sync.Mutex
 }
 
 func NewProxyFinder(pacurl string, wrapper *PACWrapper) *ProxyFinder {
-	pf := &ProxyFinder{wrapper: wrapper}
+	pf := &ProxyFinder{wrapper: wrapper, blocked: newBlocklist()}
 	if len(pacurl) == 0 {
 		log.Println("No PAC URL specified or detected; all requests will be made directly")
 	} else if _, err := url.Parse(pacurl); err != nil {
@@ -64,10 +64,12 @@ func (pf *ProxyFinder) checkForUpdates() {
 	pacjs = pf.fetcher.download()
 	if pacjs == nil {
 		if !pf.fetcher.isConnected() {
+			pf.blocked = newBlocklist()
 			pf.wrapper.Wrap(nil)
 		}
 		return
 	}
+	pf.blocked = newBlocklist()
 	if err := pf.runner.Update(pacjs); err != nil {
 		log.Printf("Error running PAC JS: %q", err)
 	} else {
@@ -85,34 +87,43 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 		log.Printf(`[%d] %s %s via "DIRECT" (not connected)`, id, req.Method, req.URL)
 		return nil, nil
 	}
-	s, err := pf.runner.FindProxyForURL(req.URL)
+	str, err := pf.runner.FindProxyForURL(req.URL)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, s)
-	ss := strings.Split(s, ";")
-	if len(ss) > 1 {
-		log.Printf("[%d] Warning: ignoring all but first proxy in %q", id, s)
-	}
-	trimmed := strings.TrimSpace(ss[0])
-	if trimmed == "DIRECT" {
-		return nil, nil
-	}
-	var host string
-	n, err := fmt.Sscanf(trimmed, "PROXY %s", &host)
-	if err == nil && n == 1 {
-		// The specified proxy should contain both a host and a port, but if for some reason
-		// it doesn't, assume port 80. This needs to be made explicit, as it eventually gets
-		// passed to net.Dial, which also requires a port.
-		proxy := &url.URL{Host: host}
-		if proxy.Port() == "" {
-			proxy.Host = net.JoinHostPort(host, "80")
+	var fallback *url.URL
+	for _, elem := range strings.Split(str, ";") {
+		fields := strings.Fields(strings.TrimSpace(elem))
+		if len(fields) == 1 && fields[0] == "DIRECT" {
+			log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, elem)
+			return nil, nil
+		} else if len(fields) == 2 && fields[0] == "PROXY" {
+			// The specified proxy should contain both a host and a port, but if for
+			// some reason it doesn't, assume port 80. This needs to be made explicit,
+			// as it eventually gets passed to net.Dial, which also requires a port.
+			proxy := &url.URL{Host: fields[1]}
+			if proxy.Port() == "" {
+				proxy.Host = net.JoinHostPort(proxy.Host, "80")
+			}
+			if pf.blocked.contains(proxy.Host) {
+				if fallback == nil {
+					fallback = proxy
+				}
+				continue
+			}
+			log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, elem)
+			return proxy, nil
 		}
-		return proxy, nil
+		log.Printf("[%d] Couldn't parse proxy: %q", id, elem)
 	}
-	if strings.HasPrefix(trimmed, "SOCKS ") {
-		return nil, errors.New("Alpaca does not yet support SOCKS proxies")
-	} else {
-		return nil, errors.New("Couldn't parse PAC response")
+	if fallback != nil {
+		// All the proxies are currently blocked. In this case, we'll temporarily ignore the
+		// blocklist and fall back to the first proxy that we saw (and skipped).
+		return fallback, nil
 	}
+	return nil, errors.New("no proxies available")
+}
+
+func (pf *ProxyFinder) blockProxy(proxy string) {
+	pf.blocked.add(proxy)
 }

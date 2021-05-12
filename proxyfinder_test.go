@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -84,4 +84,26 @@ func TestFallbackToDirectWhenNoPACURL(t *testing.T) {
 	proxy, err := pf.findProxyForRequest(req)
 	require.NoError(t, err)
 	assert.Nil(t, proxy)
+}
+
+func TestSkipBadProxies(t *testing.T) {
+	js := `function FindProxyForURL(url, host) { return "PROXY primary:80; PROXY backup:80" }`
+	server := httptest.NewServer(http.HandlerFunc(pacjsHandler(js)))
+	defer server.Close()
+	pw := NewPACWrapper(PACData{Port: 1})
+	pf := NewProxyFinder(server.URL, pw)
+	req := httptest.NewRequest(http.MethodGet, "https://www.test", nil)
+	ctx := context.WithValue(req.Context(), contextKeyID, 0)
+	req = req.WithContext(ctx)
+	proxy, err := pf.findProxyForRequest(req)
+	require.NoError(t, err)
+	assert.Equal(t, "primary:80", proxy.Host)
+	pf.blocked.add("primary:80")
+	proxy, err = pf.findProxyForRequest(req)
+	require.NoError(t, err)
+	assert.Equal(t, "backup:80", proxy.Host)
+	pf.blocked.add("backup:80")
+	proxy, err = pf.findProxyForRequest(req)
+	require.NoError(t, err)
+	assert.Equal(t, "primary:80", proxy.Host)
 }

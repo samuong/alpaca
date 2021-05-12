@@ -54,13 +54,17 @@ func (tp testProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func newDirectProxy() ProxyHandler {
-	return NewProxyHandler(func(r *http.Request) (*url.URL, error) { return nil, nil }, nil)
+	return NewProxyHandler(
+		func(r *http.Request) (*url.URL, error) { return nil, nil },
+		nil,
+		func(string) {},
+	)
 }
 
 func newChildProxy(parent *httptest.Server) ProxyHandler {
 	return NewProxyHandler(func(r *http.Request) (*url.URL, error) {
 		return &url.URL{Host: parent.Listener.Addr().String()}, nil
-	}, nil)
+	}, nil, func(string) {})
 }
 
 func proxyServer(t *testing.T, proxy *httptest.Server) proxyFunc {
