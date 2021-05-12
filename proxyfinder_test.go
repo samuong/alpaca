@@ -29,21 +29,24 @@ type fakeNetMonitor struct {
 	changed bool
 }
 
-/*
 func (nm *fakeNetMonitor) addrsChanged() bool {
 	tmp := nm.changed
 	nm.changed = false
 	return tmp
 }
-*/
 
-/*
 func TestDownloadWithNetworkChanges(t *testing.T) {
 	// Initially, the download succeeds and we are connected (to the PAC server).
-	s1 := httptest.NewServer(http.HandlerFunc(pacjsHandler("test script 1")))
-	nm := &fakeNetMonitor{true}
-	pf := newPACFetcher(s1.URL)
-	pf.monitor = nm
+	pacjs := `function FindProxyForURL(url, host) { return 'PROXY a:1' }`
+	s1 := httptest.NewServer(http.HandlerFunc(pacjsHandler(pacjs)))
+	pf := NewProxyFinder(s1.URL, nil)
+	pf.monitor = &fakeNetMonitor{true}
+	pf.checkForUpdates()
+	pf.findProxyForRequest
+
+
+
+
 	assert.Equal(t, []byte("test script 1"), pf.download())
 	assert.True(t, pf.isConnected())
 	// Try again. Nothing changed, so we don't get a new script, but are still connected.
@@ -62,7 +65,6 @@ func TestDownloadWithNetworkChanges(t *testing.T) {
 	assert.Equal(t, []byte("test script 2"), pf.download())
 	assert.True(t, pf.isConnected())
 }
-*/
 
 func TestFindProxyForRequest(t *testing.T) {
 	tests := []struct {
