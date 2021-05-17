@@ -23,7 +23,7 @@ import (
 	"os"
 	"os/user"
 
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 var getCredentialsFromKeyring func() (*authenticator, error)
@@ -56,7 +56,7 @@ func main() {
 	var a *authenticator
 	if *domain != "" {
 		fmt.Printf("Password (for %s\\%s): ", *domain, *username)
-		buf, err := terminal.ReadPassword(int(os.Stdin.Fd()))
+		buf, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Println()
 		if err != nil {
 			log.Fatalf("Error reading password from stdin: %v", err)
