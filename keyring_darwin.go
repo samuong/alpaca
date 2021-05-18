@@ -1,4 +1,4 @@
-// Copyright 2019,2020 The Alpaca Authors
+// Copyright 2019, 2020, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,22 +24,26 @@ import (
 	"github.com/keybase/go-keychain"
 )
 
-var testKeychain *keychain.Keychain
-var execCommand = exec.Command
+const keyringSupported = true
 
-func init() {
-	getCredentialsFromKeyring = getCredentialsFromNoMAD
+type keyring struct {
+	testKeychain *keychain.Keychain
+	execCommand  func(name string, arg ...string) *exec.Cmd
 }
 
-func readDefaultForNoMAD(key string) (string, error) {
+func fromKeyring() *keyring {
+	return &keyring{testKeychain: nil, execCommand: exec.Command}
+}
+
+func (k *keyring) readDefaultForNoMAD(key string) (string, error) {
 	userDomain := "com.trusourcelabs.NoMAD"
 	mpDomain := fmt.Sprintf("/Library/Managed Preferences/%s.plist", userDomain)
 
 	// Read from managed preferences first
-	out, err := execCommand("defaults", "read", mpDomain, key).Output()
+	out, err := k.execCommand("defaults", "read", mpDomain, key).Output()
 	if err != nil {
 		// Read from user preferences if not in managed preferences
-		out, err = execCommand("defaults", "read", userDomain, key).Output()
+		out, err = k.execCommand("defaults", "read", userDomain, key).Output()
 	}
 	if err != nil {
 		return "", err
@@ -47,11 +51,11 @@ func readDefaultForNoMAD(key string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func readPasswordFromKeychain(userPrincipal string) string {
+func (k *keyring) readPasswordFromKeychain(userPrincipal string) string {
 	// https://nomad.menu/help/keychain-usage/
 	query := keychain.NewItem()
-	if testKeychain != nil {
-		query.SetMatchSearchList(*testKeychain)
+	if k.testKeychain != nil {
+		query.SetMatchSearchList(*k.testKeychain)
 	}
 	query.SetSecClass(keychain.SecClassGenericPassword)
 	query.SetAccount(userPrincipal)
@@ -64,14 +68,14 @@ func readPasswordFromKeychain(userPrincipal string) string {
 	return string(results[0].Data)
 }
 
-func getCredentialsFromNoMAD() (*authenticator, error) {
-	useKeychain, err := readDefaultForNoMAD("UseKeychain")
+func (k *keyring) getCredentials() (*authenticator, error) {
+	useKeychain, err := k.readDefaultForNoMAD("UseKeychain")
 	if err != nil {
 		return nil, err
 	} else if useKeychain != "1" {
 		return nil, errors.New("NoMAD found, but not configured to use keychain")
 	}
-	userPrincipal, err := readDefaultForNoMAD("UserPrincipal")
+	userPrincipal, err := k.readDefaultForNoMAD("UserPrincipal")
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +84,7 @@ func getCredentialsFromNoMAD() (*authenticator, error) {
 		return nil, errors.New("Couldn't retrieve AD domain and username from NoMAD.")
 	}
 	user, domain := substrs[0], substrs[1]
-	hash := getNtlmHash([]byte(readPasswordFromKeychain(userPrincipal)))
-	log.Printf("Found NoMAD credentails for %s\\%s in system keychain", domain, user)
+	hash := getNtlmHash([]byte(k.readPasswordFromKeychain(userPrincipal)))
+	log.Printf("Found NoMAD credentials for %s\\%s in system keychain", domain, user)
 	return &authenticator{domain, user, hash}, nil
 }

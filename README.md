@@ -66,6 +66,26 @@ When this happens, Alpaca will temporarily bypass the parent proxy and send
 requests directly, so there's no need to manually unset/re-set `http_proxy` and
 `https_proxy` as you move between networks.
 
+## Non-interactive launch
+
+If you want to use Alpaca without any interactive password prompt, you can store
+your NTLM credentials (domain, username and MD4-hashed password) in an
+environment variable called `$NTLM_CREDENTIALS`. You can use the `-H` flag to
+generate this value:
+
+```sh
+$ ./alpaca -d MYDOMAIN -u me -H
+Password (for MYDOMAIN\me):
+# Add this to your ~/.profile (or equivalent) and restart your shell
+NTLM_CREDENTIALS="me@MYDOMAIN:823893adfad2cda6e1a414f3ebdf58f7"; export NTLM_CREDENTIALS
+```
+
+Note that this hash is *not* cryptographically secure; it's just meant to stop
+people from being able to read your password with a quick glance.
+
+Once you've set this environment variable, you can start Alpaca by running
+`./alpaca`.
+
 [1]: https://github.com/samuong/alpaca/releases
 [2]: https://img.shields.io/github/v/tag/samuong/alpaca.svg?logo=github&label=latest
 [3]: https://img.shields.io/github/workflow/status/samuong/alpaca/Continuous%20Integration/master

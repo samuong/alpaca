@@ -22,11 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/user"
-
-	"golang.org/x/term"
 )
-
-var getCredentialsFromKeyring func() (*authenticator, error)
 
 func whoAmI() string {
 	me, err := user.Current()
@@ -42,6 +38,7 @@ func main() {
 	pacURLFromFlag := flag.String("C", "", "url of proxy auto-config (pac) file")
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
 	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
+	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
 	flag.Parse()
 
 	pacURL := *pacURLFromFlag
@@ -53,21 +50,31 @@ func main() {
 		}
 	}
 
-	var a *authenticator
+	var src credentialSource
 	if *domain != "" {
-		fmt.Printf("Password (for %s\\%s): ", *domain, *username)
-		buf, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Println()
-		if err != nil {
-			log.Fatalf("Error reading password from stdin: %v", err)
-		}
-		a = &authenticator{domain: *domain, username: *username, hash: getNtlmHash(buf)}
-	} else if getCredentialsFromKeyring != nil {
+		src = fromTerminal().forUser(*domain, *username)
+	} else if value := os.Getenv("NTLM_CREDENTIALS"); value != "" {
+		src = fromEnvVar(value)
+	} else if keyringSupported {
+		src = fromKeyring()
+	}
+	var a *authenticator
+	if src != nil {
 		var err error
-		a, err = getCredentialsFromKeyring()
+		a, err = src.getCredentials()
 		if err != nil {
-			log.Printf("NoMAD credentials not found, disabling proxy auth: %v", err)
+			log.Printf("Credentials not found, disabling proxy auth: %v", err)
 		}
+	}
+
+	if *printHash {
+		if a == nil {
+			fmt.Println("Please specify a domain (using -d) and username (using -u)")
+			os.Exit(1)
+		}
+		fmt.Printf("# Add this to your ~/.profile (or equivalent) and restart your shell\n")
+		fmt.Printf("NTLM_CREDENTIALS=%q; export NTLM_CREDENTIALS\n", a)
+		os.Exit(0)
 	}
 
 	pacWrapper := NewPACWrapper(PACData{Port: *port})
