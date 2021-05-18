@@ -80,7 +80,7 @@ func getCredentialsFromNoMAD() (*authenticator, error) {
 		return nil, errors.New("Couldn't retrieve AD domain and username from NoMAD.")
 	}
 	user, domain := substrs[0], substrs[1]
-	password := readPasswordFromKeychain(userPrincipal)
+	hash := getNtlmHash([]byte(readPasswordFromKeychain(userPrincipal)))
 	log.Printf("Found NoMAD credentails for %s\\%s in system keychain", domain, user)
-	return &authenticator{domain, user, password}, nil
+	return &authenticator{domain, user, hash}, nil
 }
