@@ -103,3 +103,7 @@ func TestNtlmAuthOverTls(t *testing.T) {
 	assert.Equal(t, "CONNECT to parent proxy", <-requests)
 	assert.Equal(t, "GET to server", <-requests)
 }
+
+func TestGetNtlmHash(t *testing.T) {
+	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", getNtlmHash([]byte("guest")))
+}

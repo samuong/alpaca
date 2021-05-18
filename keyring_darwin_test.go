@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,11 +27,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func fakeExecCommand(env []string, name string, arg ...string) *exec.Cmd {
-	arg = append([]string{"-test.run=TestMockDefaults", "--", name}, arg...)
-	cmd := exec.Command(os.Args[0], arg...)
-	cmd.Env = append(env, "ALPACA_WANT_MOCK_DEFAULTS=1")
-	return cmd
+func fakeExecCommand(env []string) func(string, ...string) *exec.Cmd {
+	return func(name string, arg ...string) *exec.Cmd {
+		arg = append([]string{"-test.run=TestMockDefaults", "--", name}, arg...)
+		cmd := exec.Command(os.Args[0], arg...)
+		cmd.Env = append(env, "ALPACA_WANT_MOCK_DEFAULTS=1")
+		return cmd
+	}
 }
 
 func TestMockDefaults(t *testing.T) {
@@ -78,29 +80,29 @@ func TestMockDefaults(t *testing.T) {
 
 func TestNoMADNotConfigured(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=0"}
-	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
-	_, err := getCredentialsFromNoMAD()
+	k := &keyring{execCommand: fakeExecCommand(env)}
+	_, err := k.getCredentials()
 	require.Error(t, err)
 }
 
 func TestNoMADNotUsingKeychain(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=0"}
-	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
-	_, err := getCredentialsFromNoMAD()
+	k := &keyring{execCommand: fakeExecCommand(env)}
+	_, err := k.getCredentials()
 	require.Error(t, err)
 }
 
 func TestNoMADNoUserPrincipal(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=0"}
-	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
-	_, err := getCredentialsFromNoMAD()
+	k := &keyring{execCommand: fakeExecCommand(env)}
+	_, err := k.getCredentials()
 	require.Error(t, err)
 }
 
 func TestNoMADInvalidUserPrincipal(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=1"}
-	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
-	_, err := getCredentialsFromNoMAD()
+	k := &keyring{execCommand: fakeExecCommand(env)}
+	_, err := k.getCredentials()
 	require.Error(t, err)
 }
 
@@ -110,7 +112,6 @@ func TestNoMAD(t *testing.T) {
 	defer os.RemoveAll(dir)
 	kc, err := keychain.NewKeychain(path.Join(dir, "test.keychain"), "")
 	require.NoError(t, err)
-	testKeychain = &kc
 
 	p := keychain.NewGenericPassword("", "malory@ISIS", "NoMAD", []byte("guest"), "")
 	p.SetAccessible(keychain.AccessibleWhenUnlocked)
@@ -118,8 +119,8 @@ func TestNoMAD(t *testing.T) {
 	require.NoError(t, keychain.AddItem(p))
 
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=2"}
-	execCommand = func(n string, a ...string) *exec.Cmd { return fakeExecCommand(env, n, a...) }
-	auth, err := getCredentialsFromNoMAD()
+	k := &keyring{testKeychain: &kc, execCommand: fakeExecCommand(env)}
+	auth, err := k.getCredentials()
 	require.NoError(t, err)
 	assert.Equal(t, "ISIS", auth.domain)
 	assert.Equal(t, "malory", auth.username)

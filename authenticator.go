@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -65,12 +66,22 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 	return rt.RoundTrip(req)
 }
 
+func (a authenticator) String() string {
+	return fmt.Sprintf("%s@%s:%s", a.username, a.domain, a.hash)
+}
+
+// The following two functions are taken from "github.com/Azure/go-ntlmssp". This code was
+// copyrighted (2016) by Microsoft and licensed under the MIT License:
+// https://github.com/Azure/go-ntlmssp/blob/66371956d46c8e2133a2b72b3d320e435465011f/LICENSE.
+
+// https://github.com/Azure/go-ntlmssp/blob/66371956d46c8e2133a2b72b3d320e435465011f/nlmp.go#L21-L25
 func getNtlmHash(password []byte) string {
 	hash := md4.New()
 	hash.Write(toUnicode(string(password)))
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
+// https://github.com/Azure/go-ntlmssp/blob/66371956d46c8e2133a2b72b3d320e435465011f/unicode.go#L24-L29
 func toUnicode(s string) []byte {
 	uints := utf16.Encode([]rune(s))
 	b := bytes.Buffer{}
