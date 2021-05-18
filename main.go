@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -61,7 +61,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error reading password from stdin: %v", err)
 		}
-		a = &authenticator{domain: *domain, username: *username, password: string(buf)}
+		a = &authenticator{domain: *domain, username: *username, hash: getNtlmHash(buf)}
 	} else if getCredentialsFromKeyring != nil {
 		var err error
 		a, err = getCredentialsFromKeyring()

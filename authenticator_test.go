@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -74,7 +74,7 @@ func TestNtlmAuth(t *testing.T) {
 		ntlmServer{t, testProxy{requests, "parent proxy", newDirectProxy()}})
 	defer parent.Close()
 	handler := newChildProxy(parent)
-	handler.auth = &authenticator{"isis", "malory", "guest"}
+	handler.auth = &authenticator{"isis", "malory", getNtlmHash([]byte("guest"))}
 	child := httptest.NewServer(testProxy{requests, "child proxy", handler})
 	defer child.Close()
 	tr := &http.Transport{Proxy: proxyServer(t, child)}
@@ -93,7 +93,7 @@ func TestNtlmAuthOverTls(t *testing.T) {
 		ntlmServer{t, testProxy{requests, "parent proxy", newDirectProxy()}})
 	defer parent.Close()
 	handler := newChildProxy(parent)
-	handler.auth = &authenticator{"isis", "malory", "guest"}
+	handler.auth = &authenticator{"isis", "malory", getNtlmHash([]byte("guest"))}
 	child := httptest.NewServer(testProxy{requests, "child proxy", handler})
 	defer child.Close()
 	tr := &http.Transport{Proxy: proxyServer(t, child), TLSClientConfig: tlsConfig(server)}

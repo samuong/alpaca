@@ -123,5 +123,5 @@ func TestNoMAD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ISIS", auth.domain)
 	assert.Equal(t, "malory", auth.username)
-	assert.Equal(t, "guest", auth.password)
+	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", auth.hash)
 }

@@ -15,17 +15,22 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/Azure/go-ntlmssp"
+	"golang.org/x/crypto/md4" //nolint:staticcheck
 )
 
 type authenticator struct {
-	domain, username, password string
+	domain, username, hash string
 }
 
 func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
@@ -50,7 +55,7 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 		log.Printf("Error decoding NTLM Type 2 (Challenge) message: %v", err)
 		return nil, err
 	}
-	authenticate, err := ntlmssp.ProcessChallenge(challenge, a.username, a.password)
+	authenticate, err := ntlmssp.ProcessChallengeWithHash(challenge, a.username, a.hash)
 	if err != nil {
 		log.Printf("Error processing NTLM Type 2 (Challenge) message: %v", err)
 		return nil, err
@@ -58,4 +63,17 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 	req.Header.Set("Proxy-Authorization",
 		"NTLM "+base64.StdEncoding.EncodeToString(authenticate))
 	return rt.RoundTrip(req)
+}
+
+func getNtlmHash(password []byte) string {
+	hash := md4.New()
+	hash.Write(toUnicode(string(password)))
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func toUnicode(s string) []byte {
+	uints := utf16.Encode([]rune(s))
+	b := bytes.Buffer{}
+	binary.Write(&b, binary.LittleEndian, &uints) //nolint:errcheck
+	return b.Bytes()
 }
