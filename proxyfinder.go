@@ -60,8 +60,7 @@ func (pf *ProxyFinder) WrapHandler(next http.Handler) http.Handler {
 func (pf *ProxyFinder) checkForUpdates() {
 	pf.Lock()
 	defer pf.Unlock()
-	var pacjs []byte
-	pacjs = pf.fetcher.download()
+	pacjs := pf.fetcher.download()
 	if pacjs == nil {
 		if !pf.fetcher.isConnected() {
 			pf.blocked = newBlocklist()
