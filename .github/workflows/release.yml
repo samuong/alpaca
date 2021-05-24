@@ -12,6 +12,7 @@ jobs:
 
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
 
     steps:
       - uses: actions/create-release@v1
@@ -23,13 +24,6 @@ jobs:
           draft: false
           prerelease: false
         id: create_release
-
-      - run: echo "${{ steps.create_release.outputs.upload_url }}" > upload_url.txt
-
-      - uses: actions/upload-artifact@v1
-        with:
-          name: upload_url
-          path: upload_url.txt
 
       - id: get_version
         run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
@@ -80,22 +74,11 @@ jobs:
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: 1
 
-      - uses: actions/download-artifact@v1
-        with:
-          name: upload_url
-
-      - id: get_release_info
-        run: |
-          echo "##[set-output name=upload_url;]$(cat upload_url/upload_url.txt)"
-        env:
-          TAG_REF_NAME: ${{ github.ref }}
-          REPOSITORY_NAME: ${{ github.repository }}
-
       - uses: actions/upload-release-asset@v1.0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.get_release_info.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          upload_url: ${{ needs.release.outputs.upload_url}} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
           asset_path: ./${{ matrix.target.goos }}-${{ matrix.target.goarch }}
           asset_name: alpaca_${{ needs.release.outputs.version }}_${{ matrix.target.goos }}-${{ matrix.target.goarch }}${{ matrix.target.ext }}
           asset_content_type: application/zip
