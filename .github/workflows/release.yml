@@ -10,6 +10,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
 
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+
     steps:
       - uses: actions/create-release@v1
         env:
@@ -27,6 +30,9 @@ jobs:
         with:
           name: upload_url
           path: upload_url.txt
+
+      - id: get_version
+        run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
 
   build:
     strategy:
@@ -68,7 +74,7 @@ jobs:
         run: |
           echo SDKROOT=$(xcrun --sdk macosx --show-sdk-path) >> $GITHUB_ENV
 
-      - run: go build -v -o ${{ matrix.target.goos }}-${{ matrix.target.goarch }}${{ matrix.target.ext }} .
+      - run: go build -v -o ${{ matrix.target.goos }}-${{ matrix.target.goarch }} .
         env:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
@@ -90,6 +96,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.get_release_info.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./${{ matrix.target.goos }}-${{ matrix.target.goarch }}${{ matrix.target.ext }}
-          asset_name: ${{ matrix.target.goos }}-${{ matrix.target.goarch }}${{ matrix.target.ext }}
+          asset_path: ./${{ matrix.target.goos }}-${{ matrix.target.goarch }}
+          asset_name: alpaca_${{ needs.release.outputs.version }}_${{ matrix.target.goos }}-${{ matrix.target.goarch }}${{ matrix.target.ext }}
           asset_content_type: application/zip
