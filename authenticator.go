@@ -20,13 +20,12 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
-	"strings"
 	"unicode/utf16"
 
-	"github.com/Azure/go-ntlmssp"
+	"github.com/jcmturner/gokrb5/v8/client"
+	"github.com/jcmturner/gokrb5/v8/config"
+	"github.com/jcmturner/gokrb5/v8/spnego"
 	"golang.org/x/crypto/md4" //nolint:staticcheck
 )
 
@@ -35,34 +34,23 @@ type authenticator struct {
 }
 
 func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
-	hostname, _ := os.Hostname() // in case of error, just use the zero value ("") as hostname
-	negotiate, err := ntlmssp.NewNegotiateMessage(a.domain, hostname)
-	if err != nil {
-		log.Printf("Error creating NTLM Type 1 (Negotiate) message: %v", err)
-		return nil, err
+	cfg := config.New()
+	cl := client.NewWithPassword(a.username, a.domain, "asdf", cfg)
+	spn := "HTTP/..."
+	s := spnego.SPNEGOClient(cl, spn)
+	if err := s.AcquireCred(); err != nil {
+		return nil, fmt.Errorf("could not acquire client credential: %v", err)
 	}
-	req.Header.Set("Proxy-Authorization", "NTLM "+base64.StdEncoding.EncodeToString(negotiate))
-	resp, err := rt.RoundTrip(req)
+	st, err := s.InitSecContext()
 	if err != nil {
-		log.Printf("Error sending NTLM Type 1 (Negotiate) request: %v", err)
-		return nil, err
-	} else if resp.StatusCode != http.StatusProxyAuthRequired {
-		log.Printf("Expected response with status 407, got %s", resp.Status)
-		return resp, nil
+		return nil, fmt.Errorf("could not initialize context: %v", err)
 	}
-	challenge, err := base64.StdEncoding.DecodeString(
-		strings.TrimPrefix(resp.Header.Get("Proxy-Authenticate"), "NTLM "))
+	nb, err := st.Marshal()
 	if err != nil {
-		log.Printf("Error decoding NTLM Type 2 (Challenge) message: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("could not marshal SPNEGO: %v", err)
 	}
-	authenticate, err := ntlmssp.ProcessChallengeWithHash(challenge, a.username, a.hash)
-	if err != nil {
-		log.Printf("Error processing NTLM Type 2 (Challenge) message: %v", err)
-		return nil, err
-	}
-	req.Header.Set("Proxy-Authorization",
-		"NTLM "+base64.StdEncoding.EncodeToString(authenticate))
+	hs := "Negotiate " + base64.StdEncoding.EncodeToString(nb)
+	req.Header.Set("Proxy-Authorization", hs)
 	return rt.RoundTrip(req)
 }
 

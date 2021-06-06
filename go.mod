@@ -6,6 +6,7 @@ require (
 	github.com/Azure/go-ntlmssp v0.0.0-20200615164410-66371956d46c
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gobwas/glob v0.2.3
+	github.com/jcmturner/gokrb5/v8 v8.4.2 // indirect
 	github.com/keybase/go-keychain v0.0.0-20201121013009-976c83ec27a6
 	github.com/robertkrimen/otto v0.0.0-20200922221731-ef014fd054ac
 	github.com/stretchr/testify v1.7.0
