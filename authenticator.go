@@ -34,8 +34,12 @@ type authenticator struct {
 }
 
 func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
-	cfg := config.New()
-	cl := client.NewWithPassword(a.username, a.domain, "asdf", cfg)
+	krb5conf := fmt.Sprintf(
+		"[libdefaults]\ndefault_realm=%s\n[realms]\n%s={kdc=%s}\n",
+		a.domain, a.domain, a.domain,
+	)
+	cfg, err := config.NewFromString(krb5conf)
+	cl := client.NewWithPassword(a.username, a.domain, "asdf", cfg, client.DisablePAFXFAST(true))
 	spn := "HTTP/..."
 	s := spnego.SPNEGOClient(cl, spn)
 	if err := s.AcquireCred(); err != nil {
