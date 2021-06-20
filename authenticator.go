@@ -34,11 +34,10 @@ type authenticator struct {
 }
 
 func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
-	krb5conf := fmt.Sprintf(
-		"[libdefaults]\ndefault_realm=%s\n[realms]\n%s={kdc=%s}\n",
-		a.domain, a.domain, a.domain,
-	)
-	cfg, err := config.NewFromString(krb5conf)
+	cfg := config.New()
+	cfg.LibDefaults.DefaultRealm = a.domain
+	cfg.Realms = []config.Realm{{Realm: a.domain, KDC: []string{a.domain}}}
+	// https://github.com/jcmturner/gokrb5/blob/663478bf457f1fc3275973bea5b7b787cd332015/USAGE.md#active-directory-kdc-and-fast-negotiation
 	cl := client.NewWithPassword(a.username, a.domain, "asdf", cfg, client.DisablePAFXFAST(true))
 	spn := "HTTP/..."
 	s := spnego.SPNEGOClient(cl, spn)
