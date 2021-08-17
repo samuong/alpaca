@@ -30,19 +30,40 @@ import (
 	"golang.org/x/crypto/md4" //nolint:staticcheck
 )
 
-type authenticator struct {
+type ntlmcred struct {
 	domain, username, hash string
 }
 
-func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
+func ntlmcredFromPassword(domain, username string, password []byte) *ntlmcred {
+	return &ntlmcred{domain: domain, username: username, hash: getNtlmHash(password)}
+}
+
+func ntlmcredFromHash(domain, username, hash string) *ntlmcred {
+	return &ntlmcred{domain: domain, username: username, hash: hash}
+}
+
+func (n *ntlmcred) wrap(delegate http.RoundTripper) http.RoundTripper {
+	return ntlmauth{n, delegate}
+}
+
+func (n ntlmcred) String() string {
+	return fmt.Sprintf("%s@%s:%s", n.username, n.domain, n.hash)
+}
+
+type ntlmauth struct {
+	cred     *ntlmcred
+	delegate http.RoundTripper
+}
+
+func (n ntlmauth) RoundTrip(req *http.Request) (*http.Response, error) {
 	hostname, _ := os.Hostname() // in case of error, just use the zero value ("") as hostname
-	negotiate, err := ntlmssp.NewNegotiateMessage(a.domain, hostname)
+	negotiate, err := ntlmssp.NewNegotiateMessage(n.cred.domain, hostname)
 	if err != nil {
 		log.Printf("Error creating NTLM Type 1 (Negotiate) message: %v", err)
 		return nil, err
 	}
 	req.Header.Set("Proxy-Authorization", "NTLM "+base64.StdEncoding.EncodeToString(negotiate))
-	resp, err := rt.RoundTrip(req)
+	resp, err := n.delegate.RoundTrip(req)
 	if err != nil {
 		log.Printf("Error sending NTLM Type 1 (Negotiate) request: %v", err)
 		return nil, err
@@ -56,18 +77,15 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 		log.Printf("Error decoding NTLM Type 2 (Challenge) message: %v", err)
 		return nil, err
 	}
-	authenticate, err := ntlmssp.ProcessChallengeWithHash(challenge, a.username, a.hash)
+	authenticate, err := ntlmssp.ProcessChallengeWithHash(
+		challenge, n.cred.username, n.cred.hash)
 	if err != nil {
 		log.Printf("Error processing NTLM Type 2 (Challenge) message: %v", err)
 		return nil, err
 	}
 	req.Header.Set("Proxy-Authorization",
 		"NTLM "+base64.StdEncoding.EncodeToString(authenticate))
-	return rt.RoundTrip(req)
-}
-
-func (a authenticator) String() string {
-	return fmt.Sprintf("%s@%s:%s", a.username, a.domain, a.hash)
+	return n.delegate.RoundTrip(req)
 }
 
 // The following two functions are taken from "github.com/Azure/go-ntlmssp". This code was

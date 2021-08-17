@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"log"
 	"os"
 	"strings"
@@ -26,7 +27,7 @@ import (
 )
 
 type credentialSource interface {
-	getCredentials() (*authenticator, error)
+	getCredentials(bool, bool, string, string) (credentials, error)
 }
 
 type terminal struct {
@@ -50,14 +51,21 @@ func (t *terminal) forUser(domain, username string) *terminal {
 	return t
 }
 
-func (t *terminal) getCredentials() (*authenticator, error) {
+func (t *terminal) getCredentials(ntlm, krb5 bool, krb5conf, kdc string) (credentials, error) {
 	fmt.Fprintf(t.stdout, "Password (for %s\\%s): ", t.domain, t.username)
 	buf, err := t.readPassword()
 	fmt.Println()
 	if err != nil {
-		return nil, fmt.Errorf("error reading password from stdin: %w", err)
+		return credentials{}, fmt.Errorf("error reading password from stdin: %w", err)
 	}
-	return &authenticator{domain: t.domain, username: t.username, hash: getNtlmHash(buf)}, nil
+	var creds credentials
+	if ntlm {
+		creds.ntlm = ntlmcredFromPassword(t.domain, t.username, buf)
+	}
+	if krb5 {
+		creds.krb5 = krb5credFromPassword(t.username, t.domain, string(buf), krb5conf, kdc)
+	}
+	return creds, nil
 }
 
 type envVar struct {
@@ -68,15 +76,45 @@ func fromEnvVar(value string) *envVar {
 	return &envVar{value: value}
 }
 
-func (e *envVar) getCredentials() (*authenticator, error) {
+func (e *envVar) getCredentials(ntlm, krb5 bool, krb5conf, kdc string) (credentials, error) {
 	at := strings.IndexRune(e.value, '@')
 	colon := strings.IndexRune(e.value, ':')
 	if at == -1 || colon == -1 || at > colon {
-		return nil, errors.New("invalid credentials string, please run `alpaca -H`")
+		return credentials{}, errors.New(
+			"invalid credentials string, please run `alpaca -H`")
 	}
 	domain := e.value[at+1 : colon]
 	username := e.value[0:at]
 	hash := e.value[colon+1:]
 	log.Printf("Found credentials for %s\\%s in environment", domain, username)
-	return &authenticator{domain, username, hash}, nil
+	return credentials{ntlm: ntlmcredFromHash(domain, username, hash), krb5: nil}, nil
+}
+
+type credentials struct {
+	ntlm *ntlmcred
+	krb5 *krb5cred
+}
+
+func (c credentials) choose(resp *http.Response) credential {
+	ntlm, negotiate := false, false
+	for _, value := range resp.Header.Values("Proxy-Authenticate") {
+		if strings.HasPrefix(value, "Negotiate") {
+			negotiate = true
+		} else if strings.HasPrefix(value, "NTLM") {
+			ntlm = true
+		}
+	}
+	if negotiate {
+		if c.krb5 != nil {
+			return c.krb5
+		}
+		return c.ntlm
+	} else if ntlm {
+		return c.ntlm
+	}
+	return nil
+}
+
+type credential interface {
+	wrap(http.RoundTripper) http.RoundTripper
 }

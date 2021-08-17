@@ -68,23 +68,31 @@ func (k *keyring) readPasswordFromKeychain(userPrincipal string) string {
 	return string(results[0].Data)
 }
 
-func (k *keyring) getCredentials() (*authenticator, error) {
+func (k *keyring) getCredentials(ntlm, krb5 bool, krb5conf, kdc string) (credentials, error) {
 	useKeychain, err := k.readDefaultForNoMAD("UseKeychain")
 	if err != nil {
-		return nil, err
+		return credentials{}, err
 	} else if useKeychain != "1" {
-		return nil, errors.New("NoMAD found, but not configured to use keychain")
+		return credentials{}, errors.New("NoMAD found, but not configured to use keychain")
 	}
 	userPrincipal, err := k.readDefaultForNoMAD("UserPrincipal")
 	if err != nil {
-		return nil, err
+		return credentials{}, err
 	}
 	substrs := strings.Split(userPrincipal, "@")
 	if len(substrs) != 2 {
-		return nil, errors.New("Couldn't retrieve AD domain and username from NoMAD.")
+		return credentials{}, errors.New(
+			"Couldn't retrieve AD domain and username from NoMAD.")
 	}
 	user, domain := substrs[0], substrs[1]
-	hash := getNtlmHash([]byte(k.readPasswordFromKeychain(userPrincipal)))
+	password := k.readPasswordFromKeychain(userPrincipal)
 	log.Printf("Found NoMAD credentials for %s\\%s in system keychain", domain, user)
-	return &authenticator{domain, user, hash}, nil
+	var creds credentials
+	if ntlm {
+		creds.ntlm = ntlmcredFromPassword(domain, user, []byte(password))
+	}
+	if krb5 {
+		creds.krb5 = krb5credFromPassword(user, domain, password, krb5conf, kdc)
+	}
+	return creds, nil
 }

@@ -31,14 +31,14 @@ import (
 
 type ProxyHandler struct {
 	transport *http.Transport
-	auth      *authenticator
+	creds     credentials
 	block     func(string)
 }
 
 type proxyFunc func(*http.Request) (*url.URL, error)
 
-func NewProxyHandler(proxy proxyFunc, auth *authenticator, block func(string)) ProxyHandler {
-	return ProxyHandler{&http.Transport{Proxy: proxy}, auth, block}
+func NewProxyHandler(proxy proxyFunc, creds credentials, block func(string)) ProxyHandler {
+	return ProxyHandler{&http.Transport{Proxy: proxy}, creds, block}
 }
 
 func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
@@ -63,7 +63,7 @@ func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodConnect {
 		ph.handleConnect(w, req)
 	} else {
-		ph.proxyRequest(w, req, ph.auth)
+		ph.proxyRequest(w, req, ph.creds)
 	}
 }
 
@@ -80,7 +80,7 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	if u == nil {
 		server, err = net.Dial("tcp", req.Host)
 	} else {
-		server, err = connectViaProxy(req, u.Host, ph.auth)
+		server, err = connectViaProxy(req, u.Host, ph.creds)
 		var dialErr *dialError
 		if errors.As(err, &dialErr) {
 			log.Printf("[%d] Temporarily blocking unreachable proxy: %q", id, u.Host)
@@ -130,7 +130,7 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	go func() { _, _ = io.Copy(client, server); client.Close() }()
 }
 
-func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.Conn, error) {
+func connectViaProxy(req *http.Request, proxy string, creds credentials) (net.Conn, error) {
 	id := req.Context().Value(contextKeyID)
 	var tr transport
 	defer tr.Close()
@@ -142,15 +142,17 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 	if err != nil {
 		log.Printf("[%d] Error reading CONNECT response: %v", id, err)
 		return nil, err
-	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
-		resp.Body.Close()
-		if err := tr.dial("tcp", proxy); err != nil {
-			log.Printf("[%d] Error re-dialling %s: %v", id, proxy, err)
-			return nil, err
-		}
-		resp, err = auth.do(req, &tr)
-		if err != nil {
-			return nil, err
+	} else if resp.StatusCode == http.StatusProxyAuthRequired {
+		if cred := creds.choose(resp); cred != nil {
+			resp.Body.Close()
+			if err := tr.dial("tcp", proxy); err != nil {
+				log.Printf("[%d] Error re-dialling %s: %v", id, proxy, err)
+				return nil, err
+			}
+			resp, err = cred.wrap(&tr).RoundTrip(req)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	resp.Body.Close()
@@ -160,7 +162,7 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 	return tr.hijack(), nil
 }
 
-func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
+func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, creds credentials) {
 	// Make a copy of the request body, in case we have to replay it (for authentication)
 	var buf bytes.Buffer
 	id := req.Context().Value(contextKeyID)
@@ -185,19 +187,23 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
-		_, err = rd.Seek(0, io.SeekStart)
-		if err != nil {
-			log.Printf("[%d] Error while seeking to start of request body: %v", id, err)
-		} else {
-			req.Body = ioutil.NopCloser(rd)
-			resp, err = auth.do(req, ph.transport)
+	if resp.StatusCode == http.StatusProxyAuthRequired {
+		if cred := creds.choose(resp); cred != nil {
+			_, err = rd.Seek(0, io.SeekStart)
 			if err != nil {
-				log.Printf("[%d] Error forwarding request (with auth): %v", id, err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
+				log.Printf("[%d] Error while seeking to start of request body: %v",
+					id, err)
+			} else {
+				req.Body = ioutil.NopCloser(rd)
+				resp, err = cred.wrap(ph.transport).RoundTrip(req)
+				if err != nil {
+					log.Printf("[%d] Error forwarding request (with auth): %v",
+						id, err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				defer resp.Body.Close()
 			}
-			defer resp.Body.Close()
 		}
 	}
 	copyResponseHeaders(w, resp)

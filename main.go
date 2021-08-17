@@ -34,11 +34,20 @@ func whoAmI() string {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	port := flag.Int("p", 3128, "port number to listen on")
-	pacURLFromFlag := flag.String("C", "", "url of proxy auto-config (pac) file")
-	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
-	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
+	pacURLFromFlag := flag.String("C", "", "URL of proxy auto-config (PAC) file")
+
+	domain := flag.String("d", "", "AD domain/Kerberos realm of the proxy account")
+	username := flag.String("u", whoAmI(), "username of the proxy account")
+
+	ntlm := flag.Bool("ntlm", false, "enable NTLM authentication")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
+
+	krb5 := flag.Bool("krb5", false, "enable Kerberos authentication")
+	krb5conf := flag.String("krb5conf", "", "path to krb5.conf file")
+	kdc := flag.String("kdc", "", "address of key distribution center (KDC)")
+
 	flag.Parse()
 
 	pacURL := *pacURLFromFlag
@@ -53,33 +62,35 @@ func main() {
 	var src credentialSource
 	if *domain != "" {
 		src = fromTerminal().forUser(*domain, *username)
-	} else if value := os.Getenv("NTLM_CREDENTIALS"); value != "" {
+	} else if value := os.Getenv("NTLM_CREDENTIALS"); value != "" && !*krb5 {
 		src = fromEnvVar(value)
 	} else if keyringSupported {
 		src = fromKeyring()
 	}
-	var a *authenticator
-	if src != nil {
+
+	var creds credentials
+	if (*ntlm || *krb5) && src != nil {
 		var err error
-		a, err = src.getCredentials()
+		creds, err = src.getCredentials(*ntlm, *krb5, *krb5conf, *kdc)
 		if err != nil {
-			log.Printf("Credentials not found, disabling proxy auth: %v", err)
+			fmt.Printf("Credentials not found, disabling proxy auth: %v", err)
 		}
 	}
 
 	if *printHash {
-		if a == nil {
+		if creds.ntlm == nil {
 			fmt.Println("Please specify a domain (using -d) and username (using -u)")
 			os.Exit(1)
 		}
 		fmt.Printf("# Add this to your ~/.profile (or equivalent) and restart your shell\n")
-		fmt.Printf("NTLM_CREDENTIALS=%q; export NTLM_CREDENTIALS\n", a)
+		fmt.Printf("NTLM_CREDENTIALS=%q; export NTLM_CREDENTIALS\n", creds.ntlm)
 		os.Exit(0)
 	}
 
 	pacWrapper := NewPACWrapper(PACData{Port: *port})
 	proxyFinder := NewProxyFinder(pacURL, pacWrapper)
-	proxyHandler := NewProxyHandler(proxyFinder.findProxyForRequest, a, proxyFinder.blockProxy)
+	proxyHandler := NewProxyHandler(
+		proxyFinder.findProxyForRequest, creds, proxyFinder.blockProxy)
 	mux := http.NewServeMux()
 	pacWrapper.SetupHandlers(mux)
 

@@ -28,6 +28,6 @@ func fromKeyring() *keyring {
 	return nil
 }
 
-func (k *keyring) getCredentials() (*authenticator, error) {
-	return nil, errors.New("not yet implemented")
+func (k *keyring) getCredentials(ntlm, krb5 bool, krb5conf, kdc string) (credentials, error) {
+	return credentials{}, errors.New("not yet implemented")
 }
