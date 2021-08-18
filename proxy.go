@@ -149,7 +149,7 @@ func connectViaProxy(req *http.Request, proxy string, creds credentials) (net.Co
 				log.Printf("[%d] Error re-dialling %s: %v", id, proxy, err)
 				return nil, err
 			}
-			resp, err = cred.wrap(&tr).RoundTrip(req)
+			resp, err = cred.wrap(&tr, proxy).RoundTrip(req)
 			if err != nil {
 				return nil, err
 			}
@@ -195,7 +195,19 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, cr
 					id, err)
 			} else {
 				req.Body = ioutil.NopCloser(rd)
-				resp, err = cred.wrap(ph.transport).RoundTrip(req)
+				// TODO: Call the proxy finder function once and cache the reuslt.
+				// There are currently too many calls to this function. This is not
+				// only wasteful, but more importantly, it opens up the possibility
+				// that we'll get a different proxy for different requests in the
+				// same handshake.
+				u, err := ph.transport.Proxy(req)
+				if err != nil {
+					log.Printf("[%d] Error finding proxy: %v\n", id, err)
+					// TODO: Use 502 rather than 500 for proxy errors elsewhere
+					w.WriteHeader(http.StatusBadGateway)
+					return
+				}
+				resp, err = cred.wrap(ph.transport, u.Hostname()).RoundTrip(req)
 				if err != nil {
 					log.Printf("[%d] Error forwarding request (with auth): %v",
 						id, err)

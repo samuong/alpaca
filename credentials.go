@@ -116,5 +116,5 @@ func (c credentials) choose(resp *http.Response) credential {
 }
 
 type credential interface {
-	wrap(http.RoundTripper) http.RoundTripper
+	wrap(delegate http.RoundTripper, proxy string) http.RoundTripper
 }

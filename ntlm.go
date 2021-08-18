@@ -42,7 +42,7 @@ func ntlmcredFromHash(domain, username, hash string) *ntlmcred {
 	return &ntlmcred{domain: domain, username: username, hash: hash}
 }
 
-func (n *ntlmcred) wrap(delegate http.RoundTripper) http.RoundTripper {
+func (n *ntlmcred) wrap(delegate http.RoundTripper, proxy string) http.RoundTripper {
 	return ntlmauth{n, delegate}
 }
 
