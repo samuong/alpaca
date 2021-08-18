@@ -27,17 +27,20 @@ func TestTerminal(t *testing.T) {
 		readPassword: func() ([]byte, error) { return []byte("guest"), nil },
 		stdout:       new(bytes.Buffer),
 	}
-	a, err := fakeTerm.forUser("isis", "malory").getCredentials()
+	creds, err := fakeTerm.forUser("isis", "malory").getCredentials(true, false, "", "")
 	require.NoError(t, err)
-	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", a.hash)
+	require.NotNil(t, creds.ntlm)
+	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", creds.ntlm.hash)
 }
 
 func TestEnvVar(t *testing.T) {
-	a, err := fromEnvVar("malory@isis:823893adfad2cda6e1a414f3ebdf58f7").getCredentials()
+	envVar := "malory@isis:823893adfad2cda6e1a414f3ebdf58f7"
+	creds, err := fromEnvVar(envVar).getCredentials(true, false, "", "")
 	require.NoError(t, err)
-	assert.Equal(t, "isis", a.domain)
-	assert.Equal(t, "malory", a.username)
-	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", a.hash)
+	require.NotNil(t, creds.ntlm)
+	assert.Equal(t, "isis", creds.ntlm.domain)
+	assert.Equal(t, "malory", creds.ntlm.username)
+	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", creds.ntlm.hash)
 }
 
 func TestEnvVarInvalid(t *testing.T) {
@@ -50,7 +53,7 @@ func TestEnvVarInvalid(t *testing.T) {
 		{name: "WrongOrder", input: "823893adfad2cda6e1a414f3ebdf58f7:malory@isis"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := fromEnvVar(test.input).getCredentials()
+			_, err := fromEnvVar(test.input).getCredentials(true, false, "", "")
 			assert.Error(t, err)
 		})
 	}

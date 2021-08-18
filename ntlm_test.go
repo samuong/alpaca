@@ -74,7 +74,7 @@ func TestNtlmAuth(t *testing.T) {
 		ntlmServer{t, testProxy{requests, "parent proxy", newDirectProxy()}})
 	defer parent.Close()
 	handler := newChildProxy(parent)
-	handler.auth = &authenticator{"isis", "malory", getNtlmHash([]byte("guest"))}
+	handler.creds.ntlm = ntlmcredFromPassword("isis", "malory", []byte("guest"))
 	child := httptest.NewServer(testProxy{requests, "child proxy", handler})
 	defer child.Close()
 	tr := &http.Transport{Proxy: proxyServer(t, child)}
@@ -93,7 +93,7 @@ func TestNtlmAuthOverTls(t *testing.T) {
 		ntlmServer{t, testProxy{requests, "parent proxy", newDirectProxy()}})
 	defer parent.Close()
 	handler := newChildProxy(parent)
-	handler.auth = &authenticator{"isis", "malory", getNtlmHash([]byte("guest"))}
+	handler.creds.ntlm = ntlmcredFromPassword("isis", "malory", []byte("guest"))
 	child := httptest.NewServer(testProxy{requests, "child proxy", handler})
 	defer child.Close()
 	tr := &http.Transport{Proxy: proxyServer(t, child), TLSClientConfig: tlsConfig(server)}

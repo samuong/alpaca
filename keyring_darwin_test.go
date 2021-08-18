@@ -81,28 +81,28 @@ func TestMockDefaults(t *testing.T) {
 func TestNoMADNotConfigured(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=0"}
 	k := &keyring{execCommand: fakeExecCommand(env)}
-	_, err := k.getCredentials()
+	_, err := k.getCredentials(true, false, "", "")
 	require.Error(t, err)
 }
 
 func TestNoMADNotUsingKeychain(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=0"}
 	k := &keyring{execCommand: fakeExecCommand(env)}
-	_, err := k.getCredentials()
+	_, err := k.getCredentials(true, false, "", "")
 	require.Error(t, err)
 }
 
 func TestNoMADNoUserPrincipal(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=0"}
 	k := &keyring{execCommand: fakeExecCommand(env)}
-	_, err := k.getCredentials()
+	_, err := k.getCredentials(true, false, "", "")
 	require.Error(t, err)
 }
 
 func TestNoMADInvalidUserPrincipal(t *testing.T) {
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=1"}
 	k := &keyring{execCommand: fakeExecCommand(env)}
-	_, err := k.getCredentials()
+	_, err := k.getCredentials(true, false, "", "")
 	require.Error(t, err)
 }
 
@@ -120,9 +120,10 @@ func TestNoMAD(t *testing.T) {
 
 	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=2"}
 	k := &keyring{testKeychain: &kc, execCommand: fakeExecCommand(env)}
-	auth, err := k.getCredentials()
+	creds, err := k.getCredentials(true, false, "", "")
 	require.NoError(t, err)
-	assert.Equal(t, "ISIS", auth.domain)
-	assert.Equal(t, "malory", auth.username)
-	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", auth.hash)
+	require.NotNil(t, creds.ntlm)
+	assert.Equal(t, "ISIS", creds.ntlm.domain)
+	assert.Equal(t, "malory", creds.ntlm.username)
+	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", creds.ntlm.hash)
 }
