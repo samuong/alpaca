@@ -30,19 +30,19 @@ func TestDirect(t *testing.T) {
 	var pr PACRunner
 	pacjs := []byte(`function FindProxyForURL(url, host) { return "DIRECT" }`)
 	require.NoError(t, pr.Update(pacjs))
-	proxy, err := pr.FindProxyForURL(&url.URL{Scheme: "https", Host: "anz.com"})
+	proxy, err := pr.FindProxyForURL(url.URL{Scheme: "https", Host: "anz.com"})
 	require.NoError(t, err)
 	assert.Equal(t, "DIRECT", proxy)
 }
 
-func TestPathAndQueryStripping(t *testing.T) {
+func TestFindProxyForURL(t *testing.T) {
 	tests := []struct {
 		name, input, expected string
 	}{
-		{"http", "http://anz.com/path?secret=abc123", "http://anz.com/path?secret=abc123"},
-		{"https with path and query", "https://anz.com/path?secret=123", "https://anz.com"},
-		{"wss with path", "wss://anz.com/websocket", "wss://anz.com"},
-		{"https with fragment", "https://anz.com/#fragment", "https://anz.com"},
+		{"NoScheme", "//alpaca.test", "https://alpaca.test"},
+		{"HTTP", "http://alpaca.test/a?b=c#d", "http://alpaca.test/a?b=c#d"},
+		{"HTTPS", "https://alpaca.test/a?b=c#d", "https://alpaca.test"},
+		{"WSS", "wss://alpaca.test/a?b=c#d", "wss://alpaca.test"},
 	}
 	for _, test := range tests {
 		var pr PACRunner
@@ -51,7 +51,7 @@ func TestPathAndQueryStripping(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			u, err := url.Parse(test.input)
 			require.NoError(t, err)
-			proxy, err := pr.FindProxyForURL(u)
+			proxy, err := pr.FindProxyForURL(*u)
 			require.NoError(t, err)
 			assert.Equal(t, test.expected, proxy)
 		})

@@ -73,9 +73,14 @@ func (pr *PACRunner) Update(pacjs []byte) error {
 	return nil
 }
 
-func (pr *PACRunner) FindProxyForURL(u *url.URL) (string, error) {
+func (pr *PACRunner) FindProxyForURL(u url.URL) (string, error) {
 	pr.Lock()
 	defer pr.Unlock()
+	if u.Scheme == "" {
+		// When a net/http Server parses a CONNECT request, the URL will
+		// have no Scheme. In that case, assume the scheme is "https".
+		u.Scheme = "https"
+	}
 	if u.Scheme == "https" || u.Scheme == "wss" {
 		// Strip the path and query components of https:// URLs.
 		// https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file#Parameters
