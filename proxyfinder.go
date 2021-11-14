@@ -86,7 +86,7 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 		log.Printf(`[%d] %s %s via "DIRECT" (not connected)`, id, req.Method, req.URL)
 		return nil, nil
 	}
-	str, err := pf.runner.FindProxyForURL(req.URL)
+	str, err := pf.runner.FindProxyForURL(*req.URL)
 	if err != nil {
 		return nil, err
 	}
