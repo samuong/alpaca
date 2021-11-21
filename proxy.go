@@ -1,4 +1,4 @@
-// Copyright 2019, 2021 The Alpaca Authors
+// Copyright 2019, 2021, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ type ProxyHandler struct {
 
 type proxyFunc func(*http.Request) (*url.URL, error)
 
-func NewProxyHandler(proxy proxyFunc, auth *authenticator, block func(string)) ProxyHandler {
+func NewProxyHandler(auth *authenticator, proxy proxyFunc, block func(string)) ProxyHandler {
 	return ProxyHandler{&http.Transport{Proxy: proxy}, auth, block}
 }
 
@@ -69,22 +69,20 @@ func (ph ProxyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// Establish a connection to the server, or an upstream proxy.
-	u, err := ph.transport.Proxy(req)
 	id := req.Context().Value(contextKeyID)
+	proxy, err := ph.transport.Proxy(req)
 	if err != nil {
-		log.Printf("[%d] Error finding proxy for %v: %v", id, req.Host, err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+		log.Printf("[%d] Error finding proxy for request: %v", id, err)
 	}
 	var server net.Conn
-	if u == nil {
-		server, err = net.Dial("tcp", req.Host)
+	if proxy == nil {
+		server, err = connectDirect(req)
 	} else {
-		server, err = connectViaProxy(req, u.Host, ph.auth)
+		server, err = connectViaProxy(req, proxy.Host, ph.auth)
 		var dialErr *dialError
 		if errors.As(err, &dialErr) {
-			log.Printf("[%d] Temporarily blocking unreachable proxy: %q", id, u.Host)
-			ph.block(u.Host)
+			log.Printf("[%d] Temporarily blocking proxy: %q", id, proxy.Host)
+			ph.block(proxy.Host)
 		}
 	}
 	if err != nil {
@@ -130,12 +128,21 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	go func() { _, _ = io.Copy(client, server); client.Close() }()
 }
 
+func connectDirect(req *http.Request) (net.Conn, error) {
+	server, err := net.Dial("tcp", req.Host)
+	if err != nil {
+		id := req.Context().Value(contextKeyID)
+		log.Printf("[%d] Error dialling host %s: %v", id, req.Host, err)
+	}
+	return server, nil
+}
+
 func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.Conn, error) {
 	id := req.Context().Value(contextKeyID)
 	var tr transport
 	defer tr.Close()
 	if err := tr.dial("tcp", proxy); err != nil {
-		log.Printf("[%d] Error dialling %s: %v", id, proxy, err)
+		log.Printf("[%d] Error dialling proxy %s: %v", id, proxy, err)
 		return nil, err
 	}
 	resp, err := tr.RoundTrip(req)
@@ -175,7 +182,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	resp, err := ph.transport.RoundTrip(req)
 	if err != nil {
 		log.Printf("[%d] Error forwarding request: %v", id, err)
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadGateway)
 		var dialErr *dialError
 		if errors.As(err, &dialErr) && dialErr.address != req.Host {
 			log.Printf("[%d] Temporarily blocking unreachable proxy: %q",
@@ -194,7 +201,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 			resp, err = auth.do(req, ph.transport)
 			if err != nil {
 				log.Printf("[%d] Error forwarding request (with auth): %v", id, err)
-				w.WriteHeader(http.StatusInternalServerError)
+				w.WriteHeader(http.StatusBadGateway)
 				return
 			}
 			defer resp.Body.Close()

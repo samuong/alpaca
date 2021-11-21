@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2021, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -54,17 +55,17 @@ func (tp testProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func newDirectProxy() ProxyHandler {
-	return NewProxyHandler(
-		func(r *http.Request) (*url.URL, error) { return nil, nil },
-		nil,
-		func(string) {},
-	)
+	return NewProxyHandler(nil, http.ProxyURL(nil), func(string) {})
 }
 
-func newChildProxy(parent *httptest.Server) ProxyHandler {
-	return NewProxyHandler(func(r *http.Request) (*url.URL, error) {
-		return &url.URL{Host: parent.Listener.Addr().String()}, nil
-	}, nil, func(string) {})
+func newChildProxy(parent *httptest.Server) http.Handler {
+	parentURL := &url.URL{Host: parent.Listener.Addr().String()}
+	childProxy := NewProxyHandler(nil, getProxyFromContext, func(string) {})
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := context.WithValue(req.Context(), contextKeyProxy, parentURL)
+		reqWithProxy := req.WithContext(ctx)
+		childProxy.ServeHTTP(w, reqWithProxy)
+	})
 }
 
 func proxyServer(t *testing.T, proxy *httptest.Server) proxyFunc {

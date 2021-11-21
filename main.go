@@ -1,4 +1,4 @@
-// Copyright 2019, 2021 The Alpaca Authors
+// Copyright 2019, 2021, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -79,7 +79,7 @@ func main() {
 
 	pacWrapper := NewPACWrapper(PACData{Port: *port})
 	proxyFinder := NewProxyFinder(pacURL, pacWrapper)
-	proxyHandler := NewProxyHandler(proxyFinder.findProxyForRequest, a, proxyFinder.blockProxy)
+	proxyHandler := NewProxyHandler(a, getProxyFromContext, proxyFinder.blockProxy)
 	mux := http.NewServeMux()
 	pacWrapper.SetupHandlers(mux)
 
