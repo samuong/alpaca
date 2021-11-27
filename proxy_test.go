@@ -345,3 +345,16 @@ func TestConnectToNonExistentHost(t *testing.T) {
 	_, err := client.Get("https://nonexistent.test")
 	require.Error(t, err)
 }
+
+func TestTransportReturnsProxyConnectOpError(t *testing.T) {
+	// ProxyHandler relies on net/http#Transport.RoundTrip to return a net.OpError with Op set
+	// to "proxyconnect" in the event that the proxy is unreachable. This isn't actually
+	// documented in the godocs, so test that this assumption is correct.
+	tr := &http.Transport{Proxy: http.ProxyURL(&url.URL{Host: "nonexistent.test:80"})}
+	req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
+	require.NoError(t, err)
+	_, err = tr.RoundTrip(req)
+	require.Error(t, err)
+	oe := err.(*net.OpError)
+	assert.Equal(t, "proxyconnect", oe.Op)
+}
