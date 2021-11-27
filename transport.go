@@ -35,7 +35,7 @@ func (t *transport) dial(network, address string) error {
 	}
 	conn, err := net.Dial(network, address)
 	if err != nil {
-		return err
+		return &net.OpError{Op: "proxyconnect", Net: network, Err: err}
 	}
 	t.conn = conn
 	t.reader = bufio.NewReader(conn)

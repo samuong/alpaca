@@ -79,8 +79,8 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 		server, err = connectDirect(req)
 	} else {
 		server, err = connectViaProxy(req, proxy.Host, ph.auth)
-		var dialErr *dialError
-		if errors.As(err, &dialErr) {
+		var oe *net.OpError
+		if errors.As(err, &oe) && oe.Op == "proxyconnect" {
 			log.Printf("[%d] Temporarily blocking proxy: %q", id, proxy.Host)
 			ph.block(proxy.Host)
 		}
@@ -183,11 +183,15 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	if err != nil {
 		log.Printf("[%d] Error forwarding request: %v", id, err)
 		w.WriteHeader(http.StatusBadGateway)
-		var dialErr *dialError
-		if errors.As(err, &dialErr) && dialErr.address != req.Host {
-			log.Printf("[%d] Temporarily blocking unreachable proxy: %q",
-				id, dialErr.address)
-			ph.block(dialErr.address)
+		var oe *net.OpError
+		if errors.As(err, &oe) && oe.Op == "proxyconnect" {
+			proxy, err := ph.transport.Proxy(req)
+			if err != nil {
+				log.Printf("[%d] Proxy connect error to unknown proxy: %v", id, err)
+				return
+			}
+			log.Printf("[%d] Temporarily blocking proxy: %q", id, proxy.Host)
+			ph.block(proxy.Host)
 		}
 		return
 	}
@@ -258,17 +262,4 @@ func copyResponseHeaders(w http.ResponseWriter, resp *http.Response) {
 	w.Header().Del("Trailer")
 	w.Header().Del("Transfer-Encoding")
 	w.Header().Del("Upgrade")
-}
-
-type dialError struct {
-	network, address string
-	err              error
-}
-
-func (e *dialError) Error() string {
-	return fmt.Sprintf("error while dialing %q %q: %s", e.network, e.address, e.err.Error())
-}
-
-func (e *dialError) Unwrap() error {
-	return e.err
 }
