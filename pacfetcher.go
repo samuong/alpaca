@@ -1,4 +1,4 @@
-// Copyright 2019, 2021 The Alpaca Authors
+// Copyright 2019, 2021, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -87,14 +87,24 @@ func (pf *pacFetcher) download() []byte {
 		return nil
 	}
 	pf.connected = false
-	resp, err := requireOK(pf.client.Get(pf.pacurl))
+	pacurl := pf.pacurl
+	if pacurl == "" {
+		var err error
+		pacurl, err = findPACURL()
+		if err != nil {
+			log.Printf("Error while trying to detect PAC URL: %v", err)
+			return nil
+		}
+	}
+	log.Printf("Attempting to download PAC from %s", pacurl)
+	resp, err := requireOK(pf.client.Get(pacurl))
 	if err != nil {
 		// Sometimes, if we try to download too soon after a network change, the PAC
 		// download can fail. See https://github.com/samuong/alpaca/issues/8 for details.
 		log.Printf("Error downloading PAC file, will retry after %v: %q",
 			delayAfterFailedDownload, err)
 		time.Sleep(delayAfterFailedDownload)
-		if resp, err = requireOK(pf.client.Get(pf.pacurl)); err != nil {
+		if resp, err = requireOK(pf.client.Get(pacurl)); err != nil {
 			log.Printf("Error downloading PAC file, giving up: %q", err)
 			return nil
 		}
