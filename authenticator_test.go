@@ -19,8 +19,10 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -30,7 +32,6 @@ import (
 
 type ntlmServer struct {
 	t        *testing.T
-	delegate http.Handler
 }
 
 func (s ntlmServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -48,7 +49,8 @@ func (s ntlmServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		sendChallengeResponse(w)
 	case 3:
 		req.Header.Del("Proxy-Authenticate")
-		s.delegate.ServeHTTP(w, req)
+		_, err := w.Write([]byte("Access granted"))
+		require.NoError(s.t, err)
 	default:
 		s.t.Fatalf("Unexpected NTLM message type: %x", msgType)
 	}
@@ -67,41 +69,24 @@ func sendChallengeResponse(w http.ResponseWriter) {
 }
 
 func TestNtlmAuth(t *testing.T) {
-	requests := make(chan string, 3)
-	server := httptest.NewServer(testServer{requests})
+	server := httptest.NewServer(ntlmServer{t})
 	defer server.Close()
-	parent := httptest.NewServer(
-		ntlmServer{t, testProxy{requests, "parent proxy", newDirectProxy()}})
-	defer parent.Close()
-	handler := newChildProxy(parent)
-	handler.auth = &authenticator{"isis", "malory", getNtlmHash([]byte("guest"))}
-	child := httptest.NewServer(testProxy{requests, "child proxy", handler})
-	defer child.Close()
-	tr := &http.Transport{Proxy: proxyServer(t, child)}
-	testGetRequest(t, tr, server.URL)
-	require.Len(t, requests, 3)
-	assert.Equal(t, "GET to child proxy", <-requests)
-	assert.Equal(t, "GET to parent proxy", <-requests)
-	assert.Equal(t, "GET to server", <-requests)
-}
-
-func TestNtlmAuthOverTls(t *testing.T) {
-	requests := make(chan string, 3)
-	server := httptest.NewTLSServer(testServer{requests})
-	defer server.Close()
-	parent := httptest.NewServer(
-		ntlmServer{t, testProxy{requests, "parent proxy", newDirectProxy()}})
-	defer parent.Close()
-	handler := newChildProxy(parent)
-	handler.auth = &authenticator{"isis", "malory", getNtlmHash([]byte("guest"))}
-	child := httptest.NewServer(testProxy{requests, "child proxy", handler})
-	defer child.Close()
-	tr := &http.Transport{Proxy: proxyServer(t, child), TLSClientConfig: tlsConfig(server)}
-	testGetRequest(t, tr, server.URL)
-	require.Len(t, requests, 3)
-	assert.Equal(t, "CONNECT to child proxy", <-requests)
-	assert.Equal(t, "CONNECT to parent proxy", <-requests)
-	assert.Equal(t, "GET to server", <-requests)
+	serverAddr := server.Listener.Addr().String()
+	tr := &http.Transport{Proxy: http.ProxyURL(&url.URL{Host: serverAddr})}
+	req, err := http.NewRequest(http.MethodGet, "http://" + serverAddr, nil)
+	require.NoError(t, err)
+	resp, err := tr.RoundTrip(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusProxyAuthRequired, resp.StatusCode)
+	auth := &authenticator{"isis", "malory", getNtlmHash([]byte("guest"))}
+	resp, err = auth.do(req, tr)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "Access granted", string(body))
 }
 
 func TestGetNtlmHash(t *testing.T) {
