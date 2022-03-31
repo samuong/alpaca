@@ -7,7 +7,6 @@ auto-configuration (PAC) files and NTLM authentication.
 
 ## Install using Homebrew
 
-If you're using macOS and use [Homebrew](https://brew.sh/), you can install
 using:
 
 ```sh
