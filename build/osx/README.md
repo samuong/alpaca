@@ -10,7 +10,7 @@ auto-configuration (PAC) files and NTLM authentication.
 The commands below will download latest alpaca and create a macOS package from it.
 
 ```sh
-$ build-pkg-from-source
+$ sh build-pkg-from-src-mac
 ```
 
 [1]: https://github.com/samuong/alpaca/releases
