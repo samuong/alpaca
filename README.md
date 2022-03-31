@@ -21,7 +21,7 @@ $ go build -ldflags="-X 'main.Version=v1.2.3' -X 'main.User=$(id -u -n)' -X 'mai
 
 $ ./alpaca -v
 Version: v1.2.3
-Built by <user> on Thu 31 Mar 2022 14:19:44 AEDT
+Built by williamf on Thu 31 Mar 2022 14:19:44 AEDT
 ```
 
 Launch Alpaca by running `alpaca`, or by using `brew services start alpaca`.
