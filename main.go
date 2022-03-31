@@ -42,6 +42,12 @@ func main() {
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
 	flag.Parse()
 
+	if *version {
+		fmt.Println("Version:", Version)
+		fmt.Println("Built by",User,"on",Time)
+		os.Exit(0)
+	}
+
 	pacURL := *pacURLFromFlag
 	if len(pacURL) == 0 {
 		var err error
@@ -75,13 +81,6 @@ func main() {
 		}
 		fmt.Printf("# Add this to your ~/.profile (or equivalent) and restart your shell\n")
 		fmt.Printf("NTLM_CREDENTIALS=%q; export NTLM_CREDENTIALS\n", a)
-		os.Exit(0)
-	}
-
-	if *version {
-		fmt.Println("Version:\t", Version)
-		fmt.Println("build.Time:\t", Time)
-		fmt.Println("build.User:\t", User)
 		os.Exit(0)
 	}
 
