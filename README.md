@@ -15,6 +15,16 @@ $ brew tap samuong/alpaca
 $ brew install samuong/alpaca/alpaca
 ```
 
+If you want to build on macOS then install latest go and use
+```
+$ go build -ldflags="-X 'main.Version=v1.1.0' -X 'main.User=$(id -u -n)' -X 'main.Time=$(date)'"
+$ ./alpaca -v
+2022/03/31 14:09:49 keyring_darwin.go:88: Found NoMAD credentials for <user> in system keychain
+Version:	 v1.1.0
+build.Time:	 Thu 31 Mar 2022 14:09:21 AEDT
+build.User:	 <login id>
+```
+
 Launch Alpaca by running `alpaca`, or by using `brew services start alpaca`.
 
 ## Install using Go
