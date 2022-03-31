@@ -1,0 +1,55 @@
+# Create OpenSSL package from source for CBA
+# Kevin Davies
+# Version 0.8
+
+PKG=alpaca
+ID=com.app.${PKG}
+VER=1.2.0
+DIR=${PKG}-${VER}
+GZ=${DIR}.tar.gz
+PKGVER=1.2.0
+PKGNAME=${DIR}-v${VER}.pkg
+BUILD=/tmp/${PKG}-build
+SCRIPTS=${PKG}-scripts
+
+# Grab latest source
+if [[ ! -f ${GZ} ]]; then
+  curl -L -o ${GZ} https://github.com/rtfmoz2/alpaca/archive/refs/tags/v${VER}.tar.gz
+  if [[ ! -f ${GZ} ]]; then
+    echo Unable to download file. Please disconnect CBA VPN for the build to start, you can then reconnect.
+    exit 1
+  fi
+fi
+
+# Extract
+tar -zxf ${GZ}
+
+cd ${DIR}
+
+# Configure and test
+./Configure darwin64-x86_64-cc shared enable-ec_nistp_64_gcc_128 no-ssl2 no-ssl3 no-comp no-shared --openssldir=/usr/local/ssl/macos-x86_64
+make test
+if [[ $? -ne 0 ]]; then
+  echo "Tests failed."
+  echo "Please resove any issues"
+  echo "Have left you in ${DIR} directory."
+  exit 1
+fi
+
+# Install into tmp location
+mkdir ${BUILD}
+make install DESTDIR=${BUILD}
+
+# Copy postinstall script into place
+cd ..
+mkdir ${SCRIPTS}
+cp postinstall ${SCRIPTS}
+
+# Build MacOSX package
+pkgbuild --scripts ${SCRIPTS} --identifier ${ID} --version ${PKGVER} --root ${BUILD}  ${PKGNAME}
+
+# Cleanup
+rm -rf ${DIR} ${GZ} ${SCRIPTS} ${BUILD}
+
+exit
+
