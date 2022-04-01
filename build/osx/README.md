@@ -13,6 +13,8 @@ The commands below will download latest alpaca and create a macOS package from i
 $ sh build-pkg-from-src-mac
 ```
 
+Once built you can open the package in finder to install it.
+
 [1]: https://github.com/samuong/alpaca/releases
 [2]: https://img.shields.io/github/v/tag/samuong/alpaca.svg?logo=github&label=latest
 [3]: https://img.shields.io/github/workflow/status/samuong/alpaca/Continuous%20Integration/master
