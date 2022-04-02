@@ -1,40 +1,35 @@
-# Create OpenSSL package from source for CBA
-# Kevin Davies
-# Version 0.8
+#!/usr/bin/ksh
 
+# Create package from local source
+# Kevin Davies
+# Version 1.0
 PKG=alpaca
 ID=com.app.${PKG}
-VER=1.2.0
+
+# echo get package version
+VER=`git describe --tags | head -1`
+VER=${VER#v}
+VER=${VER%-*-*}
+
+# setup system vars
 DIR=${PKG}-${VER}
 GZ=${DIR}.tar.gz
-PKGVER=1.2.0
+
 PKGNAME=${DIR}-v${VER}.pkg
 BUILD=/tmp/${PKG}-build
 SCRIPTS=${PKG}-scripts
 
-# Grab latest source
-if [[ ! -f ${GZ} ]]; then
-  curl -L -o ${GZ} https://github.com/rtfmoz2/alpaca/archive/refs/tags/v${VER}.tar.gz
-  if [[ ! -f ${GZ} ]]; then
-    echo Unable to download file. 
-    exit 1
-  fi
-fi
-
-# Extract
-tar -zxf ${GZ}
-
-cd ${DIR}
-
 # Build and install to temp directory
 mkdir ${BUILD}
 export GOPATH=${BUILD}
+CWD=$PWD
+cd ../..
 go install -ldflags="-X 'main.Version=v1.2.3' -X 'main.User=$(id -u -n)' -X 'main.Time=$(date)'"
 
 # Copy postinstall script into place
-cd ..
+cd $CWD
 mkdir ${SCRIPTS}
-cp postinstall ${SCRIPTS}
+cp build/osx/postinstall ${SCRIPTS}
 
 # Build MacOSX package
 pkgbuild --scripts ${SCRIPTS} --identifier ${ID} --version ${PKGVER} --root ${BUILD}  ${PKGNAME}
