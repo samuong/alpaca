@@ -3,8 +3,6 @@
 # Create package from local source
 # Kevin Davies
 # Version 1.0
-PKG=alpaca
-ID=com.app.${PKG}
 
 # echo get package version
 VER=`git describe --tags | head -1`
@@ -12,30 +10,32 @@ VER=${VER#v}
 VER=${VER%-*-*}
 
 # setup system vars
-DIR=${PKG}-${VER}
-GZ=${DIR}.tar.gz
-
-GOPATH=${PWD}/go
+DIR=${PWD}
+APP=alpaca
+ID=com.app.${APP}
+PKG=${APP}-${VER}.pkg
+GOPATH=${DIR}/go
 BUILD=${GOPATH}
-SCRIPTS=${PKG}-scripts
+SCRIPTS=${GOPATH}/scripts
 export GOPATH
 
 # Build and install to temp directory
 umask 000
 mkdir -p ${BUILD}/bin
-mkdir -p ${BUILD}/pkg
-go install -ldflags="-X 'main.Version=${VER}' -X 'main.User=$(id -u -n)' -X 'main.Time=$(date)'"
+ln -s ../../.. ${BUILD}/src
+cd ${BUILD}/src
+go install -ldflags="-X 'main.Version=${VER}' -X 'main.User=$(id -u -n)' -X 'main.Time=$(date)'" 
 
 # Copy postinstall script into place
-cd $CWD
-mkdir ${SCRIPTS}
+cd ${DIR}
+mkdir -p ${SCRIPTS}
 cp postinstall ${SCRIPTS}
 
 # Build MacOSX package
 pkgbuild --scripts ${SCRIPTS} --identifier ${ID} --version ${VER} --root ${BUILD}  ${PKG}
 
 # Cleanup
-chown -R $UID:staff ${BUILD}
-rm -rf ${DIR} ${GZ} ${SCRIPTS} ${BUILD}
+chmod -R u+rwX ${BUILD}
+rm -rf ${SCRIPTS} ${BUILD}
 
 exit
