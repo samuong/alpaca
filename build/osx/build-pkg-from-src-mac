@@ -15,26 +15,27 @@ VER=${VER%-*-*}
 DIR=${PKG}-${VER}
 GZ=${DIR}.tar.gz
 
-PKGNAME=${DIR}-v${VER}.pkg
-BUILD=/tmp/${PKG}-build
+GOPATH=${PWD}/go
+BUILD=${GOPATH}
 SCRIPTS=${PKG}-scripts
+export GOPATH
 
 # Build and install to temp directory
-mkdir ${BUILD}
-export GOPATH=${BUILD}
-CWD=$PWD
-cd ../..
-go install -ldflags="-X 'main.Version=v1.2.3' -X 'main.User=$(id -u -n)' -X 'main.Time=$(date)'"
+umask 000
+mkdir -p ${BUILD}/bin
+mkdir -p ${BUILD}/pkg
+go install -ldflags="-X 'main.Version=${VER}' -X 'main.User=$(id -u -n)' -X 'main.Time=$(date)'"
 
 # Copy postinstall script into place
 cd $CWD
 mkdir ${SCRIPTS}
-cp build/osx/postinstall ${SCRIPTS}
+cp postinstall ${SCRIPTS}
 
 # Build MacOSX package
-pkgbuild --scripts ${SCRIPTS} --identifier ${ID} --version ${PKGVER} --root ${BUILD}  ${PKGNAME}
+pkgbuild --scripts ${SCRIPTS} --identifier ${ID} --version ${VER} --root ${BUILD}  ${PKG}
 
 # Cleanup
+chown -R $UID:staff ${BUILD}
 rm -rf ${DIR} ${GZ} ${SCRIPTS} ${BUILD}
 
 exit
