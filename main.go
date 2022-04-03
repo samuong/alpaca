@@ -39,9 +39,9 @@ func main() {
 	port := flag.Int("p", 3128, "port number to listen on")
 	pacURLFromFlag := flag.String("C", "", "url of proxy auto-config (pac) file")
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
-	version := flag.Bool("v", false, "print version number")
 	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
+	version := flag.Bool("version", false, "print version number")
 	flag.Parse()
 
 	if *version {
