@@ -32,8 +32,9 @@ func whoAmI() string {
 	return me.Username
 }
 
+var BuildVersion string
+
 func main() {
-	var BuildVersion string
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	port := flag.Int("p", 3128, "port number to listen on")
 	pacURLFromFlag := flag.String("C", "", "url of proxy auto-config (pac) file")
