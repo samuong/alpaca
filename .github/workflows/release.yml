@@ -68,7 +68,11 @@ jobs:
         run: |
           echo SDKROOT=$(xcrun --sdk macosx --show-sdk-path) >> $GITHUB_ENV
 
-      - run: go build -v -o ${{ matrix.target.goos }}-${{ matrix.target.goarch }} .
+      - run: |
+          tag=$(git describe --tags | grep '^v' | head -1) 
+          semver=${tag#v}
+          version=${semver%-*-*}
+          go build -v -o ${{ matrix.target.goos }}-${{ matrix.target.goarch }} -ldflags="-X 'main.BuildTime=$(date)' -X 'main.BuildVersion=$version'" .
         env:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
