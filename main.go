@@ -43,10 +43,9 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("Alpaca ",BuildVersion, "built at",BuildTime)
+		fmt.Println("Alpaca", BuildVersion, "built at", BuildTime)
 		os.Exit(0)
 	}
-
 
 	pacURL := *pacURLFromFlag
 	if len(pacURL) == 0 {
