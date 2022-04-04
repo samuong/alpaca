@@ -24,6 +24,8 @@ import (
 	"os/user"
 )
 
+var BuildVersion string
+
 func whoAmI() string {
 	me, err := user.Current()
 	if err != nil {
@@ -31,8 +33,6 @@ func whoAmI() string {
 	}
 	return me.Username
 }
-
-var BuildVersion string
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
