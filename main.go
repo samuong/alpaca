@@ -24,6 +24,8 @@ import (
 	"os/user"
 )
 
+var BuildVersion string
+
 func whoAmI() string {
 	me, err := user.Current()
 	if err != nil {
@@ -39,7 +41,13 @@ func main() {
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
 	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
+	version := flag.Bool("version", false, "print version number")
 	flag.Parse()
+
+	if *version {
+		fmt.Println("Alpaca", BuildVersion)
+		os.Exit(0)
+	}
 
 	pacURL := *pacURLFromFlag
 	if len(pacURL) == 0 {
