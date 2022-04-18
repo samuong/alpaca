@@ -143,6 +143,7 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 		log.Printf("[%d] Error reading CONNECT response: %v", id, err)
 		return nil, err
 	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+		log.Printf("[%d] 0. got %q", id, resp.Status)
 		resp.Body.Close()
 		if err := tr.dial("tcp", proxy); err != nil {
 			log.Printf("[%d] Error re-dialling %s: %v", id, proxy, err)
@@ -153,6 +154,7 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 			return nil, err
 		}
 	}
+	log.Printf("[%d] 1. got %q", id, resp.Status)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("[%d] Unexpected response status: %s", id, resp.Status)
@@ -186,6 +188,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+		log.Printf("[%d] 1. got %q", id, resp.Status)
 		_, err = rd.Seek(0, io.SeekStart)
 		if err != nil {
 			log.Printf("[%d] Error while seeking to start of request body: %v", id, err)
@@ -197,6 +200,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
+			log.Printf("[%d] 3. got %q", id, resp.Status)
 			defer resp.Body.Close()
 		}
 	}
