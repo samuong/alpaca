@@ -27,12 +27,11 @@ import (
 const keyringSupported = true
 
 type keyring struct {
-	testKeychain *keychain.Keychain
 	execCommand  func(name string, arg ...string) *exec.Cmd
 }
 
 func fromKeyring() *keyring {
-	return &keyring{testKeychain: nil, execCommand: exec.Command}
+	return &keyring{execCommand: exec.Command}
 }
 
 func (k *keyring) readDefaultForNoMAD(key string) (string, error) {
@@ -54,9 +53,6 @@ func (k *keyring) readDefaultForNoMAD(key string) (string, error) {
 func (k *keyring) readPasswordFromKeychain(userPrincipal string) string {
 	// https://nomad.menu/help/keychain-usage/
 	query := keychain.NewItem()
-	if k.testKeychain != nil {
-		query.SetMatchSearchList(*k.testKeychain)
-	}
 	query.SetSecClass(keychain.SecClassGenericPassword)
 	query.SetAccount(userPrincipal)
 	query.SetReturnAttributes(true)
