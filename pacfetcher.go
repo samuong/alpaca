@@ -94,6 +94,9 @@ func (pf *pacFetcher) download() []byte {
 		if err != nil {
 			log.Printf("Error while trying to detect PAC URL: %v", err)
 			return nil
+		} else if pacurl == "" {
+			log.Println("No PAC URL specified or detected; all requests will be made directly")
+			return nil
 		}
 	}
 	log.Printf("Attempting to download PAC from %s", pacurl)
