@@ -16,14 +16,10 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
-	"path"
 	"testing"
 
-	"github.com/keybase/go-keychain"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -104,25 +100,4 @@ func TestNoMADInvalidUserPrincipal(t *testing.T) {
 	k := &keyring{execCommand: fakeExecCommand(env)}
 	_, err := k.getCredentials()
 	require.Error(t, err)
-}
-
-func TestNoMAD(t *testing.T) {
-	dir, err := ioutil.TempDir("", "alpaca")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
-	kc, err := keychain.NewKeychain(path.Join(dir, "test.keychain"), "")
-	require.NoError(t, err)
-
-	p := keychain.NewGenericPassword("", "malory@ISIS", "NoMAD", []byte("guest"), "")
-	p.SetAccessible(keychain.AccessibleWhenUnlocked)
-	p.UseKeychain(kc)
-	require.NoError(t, keychain.AddItem(p))
-
-	env := []string{"DOMAIN_EXISTS=1", "USE_KEYCHAIN=1", "USER_PRINCIPAL=2"}
-	k := &keyring{testKeychain: &kc, execCommand: fakeExecCommand(env)}
-	auth, err := k.getCredentials()
-	require.NoError(t, err)
-	assert.Equal(t, "ISIS", auth.domain)
-	assert.Equal(t, "malory", auth.username)
-	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", auth.hash)
 }
