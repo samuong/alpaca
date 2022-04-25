@@ -143,6 +143,7 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 		log.Printf("[%d] Error reading CONNECT response: %v", id, err)
 		return nil, err
 	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
 		resp.Body.Close()
 		if err := tr.dial("tcp", proxy); err != nil {
 			log.Printf("[%d] Error re-dialling %s: %v", id, proxy, err)
@@ -186,6 +187,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
 		_, err = rd.Seek(0, io.SeekStart)
 		if err != nil {
 			log.Printf("[%d] Error while seeking to start of request body: %v", id, err)
