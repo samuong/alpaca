@@ -337,3 +337,11 @@ func TestConnectResponseHasCorrectNewlines(t *testing.T) {
 	assert.NotContains(t, noCRLFs, "\r", "response contains unmatched CR")
 	assert.NotContains(t, noCRLFs, "\n", "response contains unmatched LF")
 }
+
+func TestConnectToNonExistentHost(t *testing.T) {
+	proxy := httptest.NewServer(newDirectProxy())
+	defer proxy.Close()
+	client := http.Client{Transport: &http.Transport{Proxy: proxyServer(t, proxy)}}
+	_, err := client.Get("https://nonexistent.test")
+	require.Error(t, err)
+}

@@ -134,7 +134,7 @@ func connectDirect(req *http.Request) (net.Conn, error) {
 		id := req.Context().Value(contextKeyID)
 		log.Printf("[%d] Error dialling host %s: %v", id, req.Host, err)
 	}
-	return server, nil
+	return server, err
 }
 
 func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.Conn, error) {
