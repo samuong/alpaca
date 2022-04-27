@@ -45,23 +45,13 @@ type ProxyFinder struct {
 
 func NewProxyFinder(pacurl string, wrapper *PACWrapper) *ProxyFinder {
 	pf := &ProxyFinder{wrapper: wrapper, blocked: newBlocklist()}
-	if len(pacurl) == 0 {
-		log.Println("No PAC URL specified or detected; all requests will be made directly")
-	} else if _, err := url.Parse(pacurl); err != nil {
-		log.Fatalf("Couldn't find a valid PAC URL: %v", pacurl)
-	} else {
-		pf.runner = new(PACRunner)
-		pf.fetcher = newPACFetcher(pacurl)
-		pf.checkForUpdates()
-	}
+	pf.runner = new(PACRunner)
+	pf.fetcher = newPACFetcher(pacurl)
+	pf.checkForUpdates()
 	return pf
 }
 
 func (pf *ProxyFinder) WrapHandler(next http.Handler) http.Handler {
-	// If we don't have a fetcher, don't wrap the handler as there's nothing to do.
-	if pf.fetcher == nil {
-		return next
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		pf.checkForUpdates()
 		proxy, err := pf.findProxyForRequest(req)
@@ -70,8 +60,11 @@ func (pf *ProxyFinder) WrapHandler(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		ctx := context.WithValue(req.Context(), contextKeyProxy, proxy)
-		next.ServeHTTP(w, req.WithContext(ctx))
+		if proxy != nil {
+			ctx := context.WithValue(req.Context(), contextKeyProxy, proxy)
+			req = req.WithContext(ctx)
+		}
+		next.ServeHTTP(w, req)
 	})
 }
 
@@ -101,7 +94,8 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 		return nil, nil
 	}
 	if !pf.fetcher.isConnected() {
-		log.Printf(`[%d] %s %s via "DIRECT" (not connected)`, id, req.Method, req.URL)
+		log.Printf(`[%d] %s %s via "DIRECT" (not connected to PAC server)`,
+			id, req.Method, req.URL)
 		return nil, nil
 	}
 	str, err := pf.runner.FindProxyForURL(*req.URL)
