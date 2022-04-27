@@ -1,4 +1,4 @@
-// Copyright 2019, 2021 The Alpaca Authors
+// Copyright 2019, 2021, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net"
@@ -23,6 +24,16 @@ import (
 	"strings"
 	"sync"
 )
+
+const contextKeyProxy = contextKey("proxy")
+
+func getProxyFromContext(req *http.Request) (*url.URL, error) {
+	if value := req.Context().Value(contextKeyProxy); value != nil {
+		proxy := value.(*url.URL)
+		return proxy, nil
+	}
+	return nil, nil
+}
 
 type ProxyFinder struct {
 	runner  *PACRunner
@@ -53,7 +64,14 @@ func (pf *ProxyFinder) WrapHandler(next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		pf.checkForUpdates()
-		next.ServeHTTP(w, req)
+		proxy, err := pf.findProxyForRequest(req)
+		if err != nil {
+			log.Printf("[%d] %v", req.Context().Value(contextKeyID), err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		ctx := context.WithValue(req.Context(), contextKeyProxy, proxy)
+		next.ServeHTTP(w, req.WithContext(ctx))
 	})
 }
 
