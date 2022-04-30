@@ -21,7 +21,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -86,7 +85,7 @@ func testGetRequest(t *testing.T, tr *http.Transport, serverURL string) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	buf, err := ioutil.ReadAll(resp.Body)
+	buf, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "Hello, client\n", string(buf))
 }
@@ -328,7 +327,7 @@ func TestConnectResponseHasCorrectNewlines(t *testing.T) {
 	req := fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", server.Addr().String())
 	_, err = client.Write([]byte(req))
 	require.NoError(t, err)
-	buf, err := ioutil.ReadAll(client)
+	buf, err := io.ReadAll(client)
 	require.NoError(t, err)
 	resp := string(buf)
 	// "HTTP/1.1 defines the sequence CR LF as the end-of-line marker"

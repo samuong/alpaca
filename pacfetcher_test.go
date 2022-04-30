@@ -1,4 +1,4 @@
-// Copyright 2019, 2021 The Alpaca Authors
+// Copyright 2019, 2021, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -143,11 +142,11 @@ func (tn testNetwork) LookupAddr(ctx context.Context, addr string) ([]string, er
 func TestPacFromFilesystem(t *testing.T) {
 	// Set up a test PAC file
 	content := []byte(`function FindProxyForURL(url, host) { return "DIRECT" }`)
-	tempdir, err := ioutil.TempDir("", "alpaca")
+	tempdir, err := os.MkdirTemp("", "alpaca")
 	require.NoError(t, err)
 	defer os.RemoveAll(tempdir)
 	pacPath := path.Join(tempdir, "test.pac")
-	require.NoError(t, ioutil.WriteFile(pacPath, content, 0644))
+	require.NoError(t, os.WriteFile(pacPath, content, 0644))
 	pacURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(pacPath)}
 
 	tn := testNetwork{false}

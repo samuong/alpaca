@@ -1,6 +1,6 @@
 module github.com/samuong/alpaca
 
-go 1.13
+go 1.17
 
 require (
 	github.com/Azure/go-ntlmssp v0.0.0-20211209120228-48547f28849e
