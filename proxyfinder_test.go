@@ -1,4 +1,4 @@
-// Copyright 2019, 2021 The Alpaca Authors
+// Copyright 2019, 2021, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,13 +32,17 @@ func TestFindProxyForRequest(t *testing.T) {
 		expectError bool
 		expected    string
 	}{
-		{"javascript error", "throw 'error'", true, ""},
-		{"multiple blocks", "return 'PROXY proxy.test:1; DIRECT'", false, "proxy.test:1"},
-		{"direct", "return 'DIRECT'", false, ""},
-		{"proxy", "return 'PROXY proxy.test:2'", false, "proxy.test:2"},
-		{"proxy without port", "return 'PROXY proxy.test'", false, "proxy.test:80"},
-		{"socks", "return 'SOCKS socksproxy.test:3'", true, ""},
-		{"invalid return value", "return 'INVALID RETURN VALUE'", true, ""},
+		{"JavaScriptError", "throw 'error'", true, ""},
+		{"MultipleBlocks", "return 'PROXY proxy.test:1; DIRECT'", false, "proxy.test:1"},
+		{"Direct", "return 'DIRECT'", false, ""},
+		{"Proxy", "return 'PROXY proxy.test:2'", false, "proxy.test:2"},
+		{"ProxyWithoutPort", "return 'PROXY proxy.test'", false, "proxy.test:80"},
+		{"Socks", "return 'SOCKS socksproxy.test:3'", true, "socksproxy.test:3"},
+		{"Http", "return 'HTTP http.test:4'", false, "http.test:4"},
+		{"HttpWithoutPort", "return 'HTTP http.test'", false, "http.test:80"},
+		{"Https", "return 'HTTPS https.test:5'", false, "https.test:5"},
+		{"HttpsWithoutPort", "return 'HTTPS https.test'", false, "https.test:443"},
+		{"InvalidReturnValue", "return 'INVALID RETURN VALUE'", true, ""},
 	}
 	for i, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
