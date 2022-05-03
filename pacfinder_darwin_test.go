@@ -1,4 +1,4 @@
-// Copyright 2019, 2021 The Alpaca Authors
+// Copyright 2019, 2021, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,7 +24,7 @@ import (
 )
 
 func TestFindPACURL(t *testing.T) {
-	dir, err := ioutil.TempDir("", "alpaca")
+	dir, err := os.MkdirTemp("", "alpaca")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")
@@ -71,7 +70,7 @@ else
 fi
 
 exit 0`
-	require.NoError(t, ioutil.WriteFile(tmpfn, []byte(mockcmd), 0700))
+	require.NoError(t, os.WriteFile(tmpfn, []byte(mockcmd), 0700))
 
 	pacURL, err := findPACURL()
 	require.NoError(t, err)
@@ -79,7 +78,7 @@ exit 0`
 }
 
 func TestFindPACURLWhenNetworkSetupIsntAvailable(t *testing.T) {
-	dir, err := ioutil.TempDir("", "alpaca")
+	dir, err := os.MkdirTemp("", "alpaca")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	oldpath := os.Getenv("PATH")

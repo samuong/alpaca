@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -179,7 +178,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 		return
 	}
 	rd := bytes.NewReader(buf.Bytes())
-	req.Body = ioutil.NopCloser(rd)
+	req.Body = io.NopCloser(rd)
 	resp, err := ph.transport.RoundTrip(req)
 	if err != nil {
 		log.Printf("[%d] Error forwarding request: %v", id, err)
@@ -203,7 +202,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 		if err != nil {
 			log.Printf("[%d] Error while seeking to start of request body: %v", id, err)
 		} else {
-			req.Body = ioutil.NopCloser(rd)
+			req.Body = io.NopCloser(rd)
 			resp, err = auth.do(req, ph.transport)
 			if err != nil {
 				log.Printf("[%d] Error forwarding request (with auth): %v", id, err)

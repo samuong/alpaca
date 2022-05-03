@@ -1,4 +1,4 @@
-// Copyright 2019 The Alpaca Authors
+// Copyright 2019, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 package main
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -28,7 +28,7 @@ import (
 func getIDFromRequest(t *testing.T, server *httptest.Server) uint {
 	res, err := http.Get(server.URL)
 	require.NoError(t, err)
-	b, err := ioutil.ReadAll(res.Body)
+	b, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 	id, err := strconv.ParseUint(string(b), 10, 64)
 	require.NoError(t, err)
