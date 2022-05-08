@@ -16,9 +16,11 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 )
 
 // transport creates and manages the lifetime of a net.Conn. Between the time that a remote server
@@ -29,13 +31,19 @@ type transport struct {
 	reader *bufio.Reader
 }
 
-func (t *transport) dial(network, address string) error {
+func (t *transport) dial(proxy *url.URL) error {
 	if err := t.Close(); err != nil {
 		return err
 	}
-	conn, err := net.Dial(network, address)
+	var conn net.Conn
+	var err error
+	if proxy.Scheme == "https" {
+		conn, err = tls.Dial("tcp", proxy.Host, tlsClientConfig)
+	} else {
+		conn, err = net.Dial("tcp", proxy.Host)
+	}
 	if err != nil {
-		return &net.OpError{Op: "proxyconnect", Net: network, Err: err}
+		return &net.OpError{Op: "proxyconnect", Net: "tcp", Err: err}
 	}
 	t.conn = conn
 	t.reader = bufio.NewReader(conn)

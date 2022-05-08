@@ -105,6 +105,7 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 	var fallback *url.URL
 	for _, elem := range strings.Split(str, ";") {
 		fields := strings.Fields(strings.TrimSpace(elem))
+		var scheme string
 		var defaultPort string
 		if len(fields) == 0 {
 			continue
@@ -112,14 +113,16 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 			log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, elem)
 			return nil, nil
 		} else if fields[0] == "PROXY" || fields[0] == "HTTP" {
+			scheme = "http"
 			defaultPort = "80"
 		} else if fields[0] == "HTTPS" {
+			scheme = "https"
 			defaultPort = "443"
 		} else {
 			log.Printf("[%d] Couldn't parse proxy: %q", id, elem)
 			continue
 		}
-		proxy := &url.URL{Host: fields[1]}
+		proxy := &url.URL{Scheme: scheme, Host: fields[1]}
 		if proxy.Port() == "" {
 			proxy.Host = net.JoinHostPort(proxy.Host, defaultPort)
 		}

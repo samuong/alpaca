@@ -76,8 +76,16 @@ func main() {
 		os.Exit(0)
 	}
 
-	pacWrapper := NewPACWrapper(PACData{Port: *port})
-	proxyFinder := NewProxyFinder(*pacurl, pacWrapper)
+	s := createServer(*port, *pacurl, a)
+	log.Printf("Listening on port %d", *port)
+	if err := s.ListenAndServe(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func createServer(port int, pacurl string, a *authenticator) *http.Server {
+	pacWrapper := NewPACWrapper(PACData{Port: port})
+	proxyFinder := NewProxyFinder(pacurl, pacWrapper)
 	proxyHandler := NewProxyHandler(a, getProxyFromContext, proxyFinder.blockProxy)
 	mux := http.NewServeMux()
 	pacWrapper.SetupHandlers(mux)
@@ -89,17 +97,12 @@ func main() {
 	handler = proxyFinder.WrapHandler(handler)
 	handler = AddContextID(handler)
 
-	s := &http.Server{
+	return &http.Server{
 		// Set the addr to localhost so that we only listen locally.
-		Addr:    fmt.Sprintf("localhost:%d", *port),
+		Addr:    fmt.Sprintf("localhost:%d", port),
 		Handler: handler,
 		// TODO: Implement HTTP/2 support. In the meantime, set TLSNextProto to a non-nil
 		// value to disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
-	}
-
-	log.Printf("Listening on port %d", *port)
-	if err := s.ListenAndServe(); err != nil {
-		log.Fatal(err)
 	}
 }
