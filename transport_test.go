@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,7 +34,7 @@ func TestTransport(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(handler))
 	defer server.Close()
 	var tr transport
-	require.NoError(t, tr.dial("tcp", server.Listener.Addr().String()))
+	require.NoError(t, tr.dial(&url.URL{Host: server.Listener.Addr().String()}))
 	defer tr.Close()
 	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
 	require.NoError(t, err)

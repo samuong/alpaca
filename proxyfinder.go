@@ -105,27 +105,35 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 	var fallback *url.URL
 	for _, elem := range strings.Split(str, ";") {
 		fields := strings.Fields(strings.TrimSpace(elem))
-		if len(fields) == 1 && fields[0] == "DIRECT" {
+		var scheme string
+		var defaultPort string
+		if len(fields) == 0 {
+			continue
+		} else if fields[0] == "DIRECT" {
 			log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, elem)
 			return nil, nil
-		} else if len(fields) == 2 && fields[0] == "PROXY" {
-			// The specified proxy should contain both a host and a port, but if for
-			// some reason it doesn't, assume port 80. This needs to be made explicit,
-			// as it eventually gets passed to net.Dial, which also requires a port.
-			proxy := &url.URL{Host: fields[1]}
-			if proxy.Port() == "" {
-				proxy.Host = net.JoinHostPort(proxy.Host, "80")
-			}
-			if pf.blocked.contains(proxy.Host) {
-				if fallback == nil {
-					fallback = proxy
-				}
-				continue
-			}
-			log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, elem)
-			return proxy, nil
+		} else if fields[0] == "PROXY" || fields[0] == "HTTP" {
+			scheme = "http"
+			defaultPort = "80"
+		} else if fields[0] == "HTTPS" {
+			scheme = "https"
+			defaultPort = "443"
+		} else {
+			log.Printf("[%d] Couldn't parse proxy: %q", id, elem)
+			continue
 		}
-		log.Printf("[%d] Couldn't parse proxy: %q", id, elem)
+		proxy := &url.URL{Scheme: scheme, Host: fields[1]}
+		if proxy.Port() == "" {
+			proxy.Host = net.JoinHostPort(proxy.Host, defaultPort)
+		}
+		if pf.blocked.contains(proxy.Host) {
+			if fallback == nil {
+				fallback = proxy
+			}
+			continue
+		}
+		log.Printf("[%d] %s %s via %q", id, req.Method, req.URL, elem)
+		return proxy, nil
 	}
 	if fallback != nil {
 		// All the proxies are currently blocked. In this case, we'll temporarily ignore the

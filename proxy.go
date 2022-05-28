@@ -16,6 +16,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,8 @@ import (
 	"github.com/samuong/alpaca/cancelable"
 )
 
+var tlsClientConfig *tls.Config
+
 type ProxyHandler struct {
 	transport *http.Transport
 	auth      *authenticator
@@ -37,7 +40,8 @@ type ProxyHandler struct {
 type proxyFunc func(*http.Request) (*url.URL, error)
 
 func NewProxyHandler(auth *authenticator, proxy proxyFunc, block func(string)) ProxyHandler {
-	return ProxyHandler{&http.Transport{Proxy: proxy}, auth, block}
+	tr := &http.Transport{Proxy: proxy, TLSClientConfig: tlsClientConfig}
+	return ProxyHandler{tr, auth, block}
 }
 
 func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
@@ -77,7 +81,7 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	if proxy == nil {
 		server, err = connectDirect(req)
 	} else {
-		server, err = connectViaProxy(req, proxy.Host, ph.auth)
+		server, err = connectViaProxy(req, proxy, ph.auth)
 		var oe *net.OpError
 		if errors.As(err, &oe) && oe.Op == "proxyconnect" {
 			log.Printf("[%d] Temporarily blocking proxy: %q", id, proxy.Host)
@@ -136,12 +140,12 @@ func connectDirect(req *http.Request) (net.Conn, error) {
 	return server, err
 }
 
-func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.Conn, error) {
+func connectViaProxy(req *http.Request, proxy *url.URL, auth *authenticator) (net.Conn, error) {
 	id := req.Context().Value(contextKeyID)
 	var tr transport
 	defer tr.Close()
-	if err := tr.dial("tcp", proxy); err != nil {
-		log.Printf("[%d] Error dialling proxy %s: %v", id, proxy, err)
+	if err := tr.dial(proxy); err != nil {
+		log.Printf("[%d] Error dialling proxy %s: %v", id, proxy.Host, err)
 		return nil, err
 	}
 	resp, err := tr.RoundTrip(req)
@@ -151,8 +155,8 @@ func connectViaProxy(req *http.Request, proxy string, auth *authenticator) (net.
 	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
 		resp.Body.Close()
-		if err := tr.dial("tcp", proxy); err != nil {
-			log.Printf("[%d] Error re-dialling %s: %v", id, proxy, err)
+		if err := tr.dial(proxy); err != nil {
+			log.Printf("[%d] Error re-dialling %s: %v", id, proxy.Host, err)
 			return nil, err
 		}
 		resp, err = auth.do(req, &tr)
