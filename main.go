@@ -19,9 +19,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/user"
+	"strconv"
 )
 
 var BuildVersion string
@@ -36,6 +38,7 @@ func whoAmI() string {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	host := flag.String("l", "localhost", "address to listen on")
 	port := flag.Int("p", 3128, "port number to listen on")
 	pacurl := flag.String("C", "", "url of proxy auto-config (pac) file")
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
@@ -76,14 +79,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	s := createServer(*port, *pacurl, a)
-	log.Printf("Listening on port %d", *port)
+	s := createServer(*host, *port, *pacurl, a)
+	log.Printf("Listening on %s", s.Addr)
 	if err := s.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func createServer(port int, pacurl string, a *authenticator) *http.Server {
+func createServer(host string, port int, pacurl string, a *authenticator) *http.Server {
 	pacWrapper := NewPACWrapper(PACData{Port: port})
 	proxyFinder := NewProxyFinder(pacurl, pacWrapper)
 	proxyHandler := NewProxyHandler(a, getProxyFromContext, proxyFinder.blockProxy)
@@ -98,8 +101,8 @@ func createServer(port int, pacurl string, a *authenticator) *http.Server {
 	handler = AddContextID(handler)
 
 	return &http.Server{
-		// Set the addr to localhost so that we only listen locally.
-		Addr:    fmt.Sprintf("localhost:%d", port),
+		// Set the addr to host(defaults to localhost) : port(defaults to 3128)
+		Addr:    net.JoinHostPort(host, strconv.Itoa(port)),
 		Handler: handler,
 		// TODO: Implement HTTP/2 support. In the meantime, set TLSNextProto to a non-nil
 		// value to disable HTTP/2.
