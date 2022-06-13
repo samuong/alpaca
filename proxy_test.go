@@ -32,25 +32,89 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type testServer struct {
-	requests chan<- string
+type requestLogger struct {
+	requests []string
 }
 
-func (ts testServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	ts.requests <- fmt.Sprintf("%s to server", req.Method)
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintln(w, "Hello, client")
+func (r *requestLogger) clear() {
+	r.requests = nil
 }
 
-type testProxy struct {
-	requests chan<- string
-	name     string
-	delegate http.Handler
+func (r *requestLogger) log(name string, delegate http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.requests = append(r.requests, fmt.Sprintf("%s to %s", req.Method, name))
+		delegate.ServeHTTP(w, req)
+	})
 }
 
-func (tp testProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	tp.requests <- fmt.Sprintf("%s to %s", req.Method, tp.name)
-	tp.delegate.ServeHTTP(w, req)
+func TestProxy(t *testing.T) {
+	// This test sets up the following components:
+	//
+	// client -+-------> parent proxy -+-> server
+	//         |               ^       |
+	//         |               |       +-> tls server
+	//         +- child proxy -+
+	//
+	// There are two servers - a regular HTTP server as well as an HTTPS
+	// (TLS) server - so that we can test both regular HTTP methods as well
+	// as the CONNECT method.
+	//
+	// There are two proxies, and the client can either use just the parent
+	// proxy, or both the parent and child proxies. This simulates the
+	// cases where Alpaca acts as a direct or chained proxy.
+
+	var r requestLogger
+	server := httptest.NewServer(r.log("server", http.NewServeMux()))
+	defer server.Close()
+	tlsServer := httptest.NewTLSServer(r.log("tlsServer", http.NewServeMux()))
+	defer tlsServer.Close()
+	parentProxy := httptest.NewServer(r.log("parentProxy", newDirectProxy()))
+	defer parentProxy.Close()
+	childProxy := httptest.NewServer(r.log("childProxy", newChildProxy(parentProxy)))
+	defer childProxy.Close()
+
+	for _, test := range []struct {
+		name     string
+		proxy    *httptest.Server
+		server   *httptest.Server
+		requests []string
+	}{
+		{
+			// client -> parent proxy -> server
+			"ClientToProxyToServer", parentProxy, server,
+			[]string{"GET to parentProxy", "GET to server"},
+		}, {
+			// client -> parent proxy -> tls server
+			"ClientToProxyToTLSServer", parentProxy, tlsServer,
+			[]string{"CONNECT to parentProxy", "GET to tlsServer"},
+		}, {
+			// client -> child proxy -> parent proxy -> server
+			"ClientToProxyToProxyToServer", childProxy, server,
+			[]string{"GET to childProxy", "GET to parentProxy", "GET to server"},
+		}, {
+			// client -> child proxy -> parent proxy -> tls server
+			"ClientToProxyToProxyToTLSServer", childProxy, tlsServer,
+			[]string{
+				"CONNECT to childProxy",
+				"CONNECT to parentProxy",
+				"GET to tlsServer",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			r.clear()
+			client := &http.Client{
+				Transport: &http.Transport{
+					Proxy:           proxyServer(t, test.proxy),
+					TLSClientConfig: tlsConfig(tlsServer),
+				},
+			}
+			resp, err := client.Get(test.server.URL)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			assert.Equal(t, test.requests, r.requests)
+		})
+	}
 }
 
 func newDirectProxy() ProxyHandler {
@@ -79,91 +143,22 @@ func tlsConfig(server *httptest.Server) *tls.Config {
 	return &tls.Config{RootCAs: cp}
 }
 
-func testGetRequest(t *testing.T, tr *http.Transport, serverURL string) {
-	client := http.Client{Transport: tr}
-	resp, err := client.Get(serverURL)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	buf, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	assert.Equal(t, "Hello, client\n", string(buf))
-}
-
-func TestGetViaProxy(t *testing.T) {
-	requests := make(chan string, 2)
-	server := httptest.NewServer(testServer{requests})
-	defer server.Close()
-	// Proxy request should not go to the mux. The empty mux will always return 404.
-	mux := http.NewServeMux()
-	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().WrapHandler(mux)})
-	defer proxy.Close()
-	tr := &http.Transport{Proxy: proxyServer(t, proxy)}
-	testGetRequest(t, tr, server.URL)
-	require.Len(t, requests, 2)
-	assert.Equal(t, "GET to proxy", <-requests)
-	assert.Equal(t, "GET to server", <-requests)
-}
-
-func TestGetOverTlsViaProxy(t *testing.T) {
-	requests := make(chan string, 2)
-	server := httptest.NewTLSServer(testServer{requests})
-	defer server.Close()
-	// Proxy request should not go to the mux. The empty mux will always return 404.
-	mux := http.NewServeMux()
-	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().WrapHandler(mux)})
-	defer proxy.Close()
-	tr := &http.Transport{Proxy: proxyServer(t, proxy), TLSClientConfig: tlsConfig(server)}
-	testGetRequest(t, tr, server.URL)
-	require.Len(t, requests, 2)
-	assert.Equal(t, "CONNECT to proxy", <-requests)
-	assert.Equal(t, "GET to server", <-requests)
-}
-
 func TestGetOriginURLsNotProxied(t *testing.T) {
-	requests := make(chan string, 2)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/origin", func(w http.ResponseWriter, req *http.Request) {
 		_, err := w.Write([]byte("Hello, client\n"))
 		require.NoError(t, err)
 	})
-	proxy := httptest.NewServer(testProxy{requests, "proxy", newDirectProxy().WrapHandler(mux)})
+	proxy := httptest.NewServer(newDirectProxy().WrapHandler(mux))
 	defer proxy.Close()
-	testGetRequest(t, &http.Transport{}, proxy.URL+"/origin")
-	require.Len(t, requests, 1)
-	assert.Equal(t, "GET to proxy", <-requests)
-}
-
-func TestGetViaTwoProxies(t *testing.T) {
-	requests := make(chan string, 3)
-	server := httptest.NewServer(testServer{requests})
-	defer server.Close()
-	parent := httptest.NewServer(testProxy{requests, "parent proxy", newDirectProxy()})
-	defer parent.Close()
-	child := httptest.NewServer(testProxy{requests, "child proxy", newChildProxy(parent)})
-	defer child.Close()
-	tr := &http.Transport{Proxy: proxyServer(t, child)}
-	testGetRequest(t, tr, server.URL)
-	require.Len(t, requests, 3)
-	assert.Equal(t, "GET to child proxy", <-requests)
-	assert.Equal(t, "GET to parent proxy", <-requests)
-	assert.Equal(t, "GET to server", <-requests)
-}
-
-func TestGetOverTlsViaTwoProxies(t *testing.T) {
-	requests := make(chan string, 3)
-	server := httptest.NewTLSServer(testServer{requests})
-	defer server.Close()
-	parent := httptest.NewServer(testProxy{requests, "parent proxy", newDirectProxy()})
-	defer parent.Close()
-	child := httptest.NewServer(testProxy{requests, "child proxy", newChildProxy(parent)})
-	defer child.Close()
-	tr := &http.Transport{Proxy: proxyServer(t, child), TLSClientConfig: tlsConfig(server)}
-	testGetRequest(t, tr, server.URL)
-	require.Len(t, requests, 3)
-	assert.Equal(t, "CONNECT to child proxy", <-requests)
-	assert.Equal(t, "CONNECT to parent proxy", <-requests)
-	assert.Equal(t, "GET to server", <-requests)
+	client := &http.Client{Transport: &http.Transport{}}
+	resp, err := client.Get(proxy.URL + "/origin")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, client\n", string(body))
 }
 
 type hopByHopTestServer struct {
