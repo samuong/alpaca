@@ -190,7 +190,7 @@ func TestWithSquid(t *testing.T) {
 	// Run (most of) Alpaca in a goroutine.
 	port, err := strconv.Atoi(findAvailablePort(t))
 	require.NoError(t, err)
-	alpaca := createServer(port, pacServer.URL, nil)
+	alpaca := createServer("localhost", port, pacServer.URL, nil)
 	go alpaca.ListenAndServe()
 	defer alpaca.Close()
 	waitForServer(alpaca.Addr)
