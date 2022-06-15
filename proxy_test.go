@@ -117,6 +117,28 @@ func TestProxy(t *testing.T) {
 	}
 }
 
+func TestProxyHTTP2(t *testing.T) {
+	var r requestLogger
+	server := httptest.NewUnstartedServer(r.log("server", http.NewServeMux()))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+	proxy := httptest.NewServer(r.log("proxy", newDirectProxy()))
+	defer proxy.Close()
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy:             proxyServer(t, proxy),
+			TLSClientConfig:   tlsConfig(server),
+			ForceAttemptHTTP2: true,
+		},
+	}
+	resp, err := client.Get(server.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, 2, resp.ProtoMajor)
+	assert.Equal(t, []string{"CONNECT to proxy", "GET to server"}, r.requests)
+}
+
 func newDirectProxy() ProxyHandler {
 	return NewProxyHandler(nil, http.ProxyURL(nil), func(string) {})
 }
