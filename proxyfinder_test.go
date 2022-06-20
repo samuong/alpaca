@@ -80,15 +80,7 @@ func TestFallbackToDirectWhenNotConnected(t *testing.T) {
 	assert.Nil(t, proxy)
 }
 
-func TestFallbackToDirectWhenNoPACURL(t *testing.T) {
-	url := ""
-	pw := NewPACWrapper(PACData{Port: 1})
-	pf := NewProxyFinder(url, pw)
-	req := httptest.NewRequest(http.MethodGet, "http://www.test", nil)
-	proxy, err := pf.findProxyForRequest(req)
-	require.NoError(t, err)
-	assert.Nil(t, proxy)
-}
+// Removed TestFallbackToDirectWhenNoPACURL - behaviour is fallback to system default when no PACURL, test case TestFallbackToDefaultWhenNoPACUrl
 
 func TestSkipBadProxies(t *testing.T) {
 	js := `function FindProxyForURL(url, host) { return "PROXY primary:80; PROXY backup:80" }`

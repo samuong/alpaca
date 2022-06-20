@@ -104,7 +104,7 @@ func TestDownloadWithNetworkChanges(t *testing.T) {
 	s2 := httptest.NewServer(http.HandlerFunc(pacjsHandler("test script 2")))
 	defer s2.Close()
 	nm.changed = true
-	pf.pacurl = s2.URL
+	pf.pacFinder = newPacFinder(s2.URL)
 	assert.Equal(t, []byte("test script 2"), pf.download())
 	assert.True(t, pf.isConnected())
 }

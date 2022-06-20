@@ -35,7 +35,7 @@ const maxResponseBytes = 1 * 1024 * 1024
 var delayAfterFailedDownload = 2 * time.Second
 
 type pacFetcher struct {
-	pacurl     string
+	pacFinder  *pacFinder
 	monitor    netMonitor
 	client     *http.Client
 	lookupAddr func(context.Context, string) ([]string, error)
@@ -64,7 +64,7 @@ func newPACFetcher(pacurl string) *pacFetcher {
 		client.Transport = &http.Transport{Proxy: nil}
 	}
 	return &pacFetcher{
-		pacurl:     pacurl,
+		pacFinder:  newPacFinder(pacurl),
 		monitor:    newNetMonitor(),
 		client:     client,
 		lookupAddr: net.DefaultResolver.LookupAddr,
@@ -83,22 +83,20 @@ func requireOK(resp *http.Response, err error) (*http.Response, error) {
 }
 
 func (pf *pacFetcher) download() []byte {
-	if !pf.monitor.addrsChanged() {
+	if !pf.monitor.addrsChanged() && !pf.pacFinder.pacChanged() {
 		return nil
 	}
 	pf.connected = false
-	pacurl := pf.pacurl
-	if pacurl == "" {
-		var err error
-		pacurl, err = findPACURL()
-		if err != nil {
-			log.Printf("Error while trying to detect PAC URL: %v", err)
-			return nil
-		} else if pacurl == "" {
-			log.Println("No PAC URL specified or detected; all requests will be made directly")
-			return nil
-		}
+
+	pacurl, err := pf.pacFinder.findPACURL()
+	if err != nil {
+		log.Printf("Error while trying to detect PAC URL: %v", err)
+		return nil
+	} else if pacurl == "" {
+		log.Println("No PAC URL specified or detected; all requests will be made directly")
+		return nil
 	}
+
 	log.Printf("Attempting to download PAC from %s", pacurl)
 	resp, err := requireOK(pf.client.Get(pacurl))
 	if err != nil {
@@ -116,7 +114,7 @@ func (pf *pacFetcher) download() []byte {
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, maxResponseBytes)
 	if err == io.EOF {
-		if strings.HasPrefix(pf.pacurl, "file:") {
+		if strings.HasPrefix(pacurl, "file:") {
 			// When using a local PAC file the online/offline status can't be determined
 			// by the fact that the PAC file is returned. Instead try reverse DNS
 			// resolution of Google's Public DNS Servers.

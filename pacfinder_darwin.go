@@ -14,76 +14,97 @@
 
 package main
 
-import (
-	"bufio"
-	"fmt"
-	"io"
-	"log"
-	"os/exec"
-	"strings"
-)
+/*
+#cgo LDFLAGS: -framework CoreFoundation -framework SystemConfiguration
+#include <CoreFoundation/CoreFoundation.h>
+#include <SystemConfiguration/SystemConfiguration.h>
 
-func findPACURL() (string, error) {
-	cmd := exec.Command("networksetup", "-listallnetworkservices")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
-	}
-	if err := cmd.Start(); err != nil {
-		return "", err
-	}
-	defer cmd.Wait() //nolint:errcheck
-	r := bufio.NewReader(stdout)
-	// Discard the first line, which isn't the name of a network service.
-	if _, err := r.ReadString('\n'); err != nil {
-		return "", err
-	}
-	for {
-		line, err := r.ReadString('\n')
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return "", err
-		}
-		// An asterisk (*) denotes that a network service is disabled; ignore it.
-		networkService := strings.TrimSuffix(strings.TrimPrefix(line, "(*)"), "\n")
-		url, err := getAutoProxyURL(networkService)
-		if err != nil {
-			log.Printf("Error getting auto proxy URL for %v: %v", networkService, err)
-			continue
-		} else if url == "(null)" || url == "" {
-			continue
-		}
-		return url, nil
-	}
-	return "", nil
+static inline SCDynamicStoreRef SCDynamicStoreCreate_trampoline() {
+	return SCDynamicStoreCreate(kCFAllocatorDefault, CFSTR("alpaca"), NULL, NULL);
 }
 
-func getAutoProxyURL(networkService string) (string, error) {
-	cmd := exec.Command("networksetup", "-getautoproxyurl", networkService)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
+static inline const char *CFStringToCString(CFStringRef value) {
+	if (value == NULL) {
+		return "";
 	}
-	if err := cmd.Start(); err != nil {
-		return "", err
+
+	const char *constValue = CFStringGetCStringPtr(value, kCFStringEncodingUTF8);
+	if (constValue != NULL) {
+		// Don't release value here as CFStringGetCStringPtr returns the raw c string backing the CFString
+		return constValue;
 	}
-	defer cmd.Wait() //nolint:errcheck
-	r := bufio.NewReader(stdout)
-	for {
-		line, err := r.ReadString('\n')
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return "", err
-		}
-		if !strings.HasPrefix(line, "URL: ") {
-			// Ignore lines without a URL, including the "Enabled" line. Assume that any
-			// disabled network services might come back online at some point, in which
-			// case we should start using the PAC URL for that service.
-			continue
-		}
-		return strings.TrimSuffix(strings.TrimPrefix(line, "URL: "), "\n"), nil
+
+	CFIndex length = CFStringGetLength(value);
+	CFIndex maxSize = CFStringGetMaximumSizeForEncoding(length, kCFStringEncodingUTF8) + 1;
+	if (length == 0 || maxSize == 0) {
+		CFRelease(value);
+		return "";
 	}
-	return "", fmt.Errorf("No auto-proxy URL for network service %v", networkService)
+
+	char *cValue = (char *)malloc(maxSize);
+	if (CFStringGetCString(value, cValue, length, kCFStringEncodingUTF8)) {
+		CFRelease(value);
+		return (const char *)cValue;
+	}
+
+	CFRelease(value);
+	free(cValue);
+	return "";
+}
+
+static inline const char *GetPACUrl_trampoline(SCDynamicStoreRef store) {
+	CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/Network/Global/Proxies"));
+	CFStringRef url = CFDictionaryGetValue(dict, CFSTR("ProxyAutoConfigURLString"));
+	CFRetain(url);
+
+	// Free the dict to avoid any leaks
+	CFRelease(dict);
+
+	return CFStringToCString(url);
+}
+*/
+import "C"
+import (
+	"log"
+	"time"
+)
+
+type pacFinder struct {
+	pacUrl   string
+	storeRef C.SCDynamicStoreRef
+}
+
+func newPacFinder(pacUrl string) *pacFinder {
+	if pacUrl != "" {
+		return &pacFinder{pacUrl, 0}
+	}
+
+	return &pacFinder{"", C.SCDynamicStoreCreate_trampoline()}
+}
+
+func (finder *pacFinder) findPACURL() (string, error) {
+	if finder.storeRef == 0 {
+		return finder.pacUrl, nil
+	}
+
+	var url string
+	start := time.Now()
+
+	if cUrl := C.GetPACUrl_trampoline(finder.storeRef); cUrl != nil {
+		url = C.GoString(cUrl)
+	}
+
+	elapsed := time.Since(start)
+	log.Printf("PacUrl found in %v", elapsed)
+
+	return url, nil
+}
+
+func (finder *pacFinder) pacChanged() bool {
+	if url, _ := finder.findPACURL(); finder.pacUrl != url {
+		finder.pacUrl = url
+		return true
+	}
+
+	return false
 }

@@ -15,81 +15,46 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
+	"bytes"
+	"os/exec"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func TestFindPACURLStatic(t *testing.T) {
+	pac := "http://internal.anz.com/proxy.pac"
+	finder := newPacFinder(pac)
+
+	foundPac, _ := finder.findPACURL()
+	require.Equal(t, pac, foundPac)
+}
+
 func TestFindPACURL(t *testing.T) {
-	dir, err := os.MkdirTemp("", "alpaca")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
-	oldpath := os.Getenv("PATH")
-	defer require.NoError(t, os.Setenv("PATH", oldpath))
-	require.NoError(t, os.Setenv("PATH", dir+":"+oldpath))
+	finder := newPacFinder("")
 
-	tmpfn := filepath.Join(dir, "networksetup")
-	mockcmd := `#!/bin/sh
-listallnetworkservices() {
-	cat <<EOF
-An asterisk (*) denotes that a network service is disabled.
-iPhone USB
-iPhone USB 2
-(*)Wi-Fi
-Bluetooth PAN
-Thunderbolt Bridge
-EOF
+	foundPac, _ := finder.findPACURL()
+
+	require.NotEqual(t, "", foundPac)
 }
 
-getautoproxyurl() {
-	if [ "$1" = 'Wi-Fi' ]
-	then
-		cat <<EOF
-URL: http://internal.anz.com/proxy.pac
-Enabled: No
-EOF
-	elif [ "$1" = 'iPhone USB 2' ]
-	then
-		cat <<EOF
-URL: 
-Enabled: No
-EOF
-	else
-		cat <<EOF
-URL: (null)
-Enabled: No
-EOF
-	fi
-}
+// Removed TestFindPACURLWhenNetworkSetupIsntAvailable - we don't rely on NetworkSetup anymore
 
-if [ "$1" = '-listallnetworkservices' ]
-then
-	listallnetworkservices "$2"
-elif [ "$1" = '-getautoproxyurl' ]
-then
-	getautoproxyurl "$2"
-else
-	exit 1
-fi
+func TestFallbackToDefaultWhenNoPACUrl(t *testing.T) {
+	// arrange
+	cmdStr := "scutil --proxy | awk '/ProxyAutoConfigURLString/ {printf $3}'"
+	cmd := exec.Command("bash", "-c", cmdStr)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
 
-exit 0`
-	require.NoError(t, os.WriteFile(tmpfn, []byte(mockcmd), 0700))
+	finder := newPacFinder("")
 
-	pacURL, err := findPACURL()
-	require.NoError(t, err)
-	assert.Equal(t, "http://internal.anz.com/proxy.pac", pacURL)
-}
+	// act
+	foundPac, _ := finder.findPACURL()
 
-func TestFindPACURLWhenNetworkSetupIsntAvailable(t *testing.T) {
-	dir, err := os.MkdirTemp("", "alpaca")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
-	oldpath := os.Getenv("PATH")
-	defer require.NoError(t, os.Setenv("PATH", oldpath))
-	require.NoError(t, os.Setenv("PATH", dir))
-	_, err = findPACURL()
-	require.NotNil(t, err)
+	// assert
+	require.Equal(t, out.String(), foundPac)
 }
