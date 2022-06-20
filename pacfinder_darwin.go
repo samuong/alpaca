@@ -51,7 +51,7 @@ func findPACURL() (string, error) {
 		if err != nil {
 			log.Printf("Error getting auto proxy URL for %v: %v", networkService, err)
 			continue
-		} else if url == "(null)" {
+		} else if url == "(null)" || url == "" {
 			continue
 		}
 		return url, nil

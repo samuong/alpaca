@@ -51,6 +51,12 @@ getautoproxyurl() {
 URL: http://internal.anz.com/proxy.pac
 Enabled: No
 EOF
+	elif [ "$1" = 'iPhone USB 2' ]
+	then
+		cat <<EOF
+URL: 
+Enabled: No
+EOF
 	else
 		cat <<EOF
 URL: (null)
