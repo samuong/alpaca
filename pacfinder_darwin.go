@@ -19,54 +19,22 @@ package main
 #include <CoreFoundation/CoreFoundation.h>
 #include <SystemConfiguration/SystemConfiguration.h>
 
-static inline SCDynamicStoreRef SCDynamicStoreCreate_trampoline() {
+static SCDynamicStoreRef SCDynamicStoreCreate_trampoline() {
 	return SCDynamicStoreCreate(kCFAllocatorDefault, CFSTR("alpaca"), NULL, NULL);
 }
 
-static inline const char *CFStringToCString(CFStringRef value) {
-	if (value == NULL) {
-		return "";
-	}
+typedef const CFStringRef CFStringRef_Const;
 
-	const char *constValue = CFStringGetCStringPtr(value, kCFStringEncodingUTF8);
-	if (constValue != NULL) {
-		// Don't release value here as CFStringGetCStringPtr returns the raw c string backing the CFString
-		return constValue;
-	}
+const CFStringRef_Const kProxiesSettings = CFSTR("State:/Network/Global/Proxies");
+const CFStringRef_Const kProxiesAutoConfigURLString = CFSTR("ProxyAutoConfigURLString");
+const CFStringRef_Const kProxiesProxyAutoConfigEnable = CFSTR("ProxyAutoConfigEnable");
 
-	CFIndex length = CFStringGetLength(value);
-	CFIndex maxSize = CFStringGetMaximumSizeForEncoding(length, kCFStringEncodingUTF8) + 1;
-	if (length == 0 || maxSize == 0) {
-		CFRelease(value);
-		return "";
-	}
-
-	char *cValue = (char *)malloc(maxSize);
-	if (CFStringGetCString(value, cValue, length, kCFStringEncodingUTF8)) {
-		CFRelease(value);
-		return (const char *)cValue;
-	}
-
-	CFRelease(value);
-	free(cValue);
-	return "";
-}
-
-static inline const char *GetPACUrl_trampoline(SCDynamicStoreRef store) {
-	CFDictionaryRef dict = SCDynamicStoreCopyValue(store, CFSTR("State:/Network/Global/Proxies"));
-	CFStringRef url = CFDictionaryGetValue(dict, CFSTR("ProxyAutoConfigURLString"));
-	CFRetain(url);
-
-	// Free the dict to avoid any leaks
-	CFRelease(dict);
-
-	return CFStringToCString(url);
-}
 */
 import "C"
 import (
 	"log"
 	"time"
+	"unsafe"
 )
 
 type pacFinder struct {
@@ -87,12 +55,8 @@ func (finder *pacFinder) findPACURL() (string, error) {
 		return finder.pacUrl, nil
 	}
 
-	var url string
 	start := time.Now()
-
-	if cUrl := C.GetPACUrl_trampoline(finder.storeRef); cUrl != nil {
-		url = C.GoString(cUrl)
-	}
+	url := finder.getPACUrl()
 
 	elapsed := time.Since(start)
 	log.Printf("PacUrl found in %v", elapsed)
@@ -107,4 +71,55 @@ func (finder *pacFinder) pacChanged() bool {
 	}
 
 	return false
+}
+
+func (finder *pacFinder) getPACUrl() string {
+	dict := C.CFDictionaryRef(C.SCDynamicStoreCopyValue(finder.storeRef, C.kProxiesSettings))
+
+	if dict == 0 {
+		return ""
+	}
+
+	defer C.CFRelease(C.CFTypeRef(dict))
+
+	pacEnabled := C.CFNumberRef(C.CFDictionaryGetValue(dict, unsafe.Pointer(C.kProxiesProxyAutoConfigEnable)))
+	if pacEnabled == 0 {
+		return ""
+	}
+
+	var enabled C.int
+	C.CFNumberGetValue(pacEnabled, C.kCFNumberIntType, unsafe.Pointer(&enabled))
+	if enabled == 0 {
+		return ""
+	}
+
+	url := C.CFStringRef_Const(C.CFDictionaryGetValue(dict, unsafe.Pointer(C.kProxiesAutoConfigURLString)))
+
+	if url == 0 {
+		return ""
+	}
+
+	return CFStringToString(url)
+}
+
+// CGO Helpers below..
+
+// CFStringToString converts a CFStringRef to a string.
+func CFStringToString(s C.CFStringRef) string {
+	p := C.CFStringGetCStringPtr(s, C.kCFStringEncodingUTF8)
+	if p != nil {
+		return C.GoString(p)
+	}
+	length := C.CFStringGetLength(s)
+	if length == 0 {
+		return ""
+	}
+	maxBufLen := C.CFStringGetMaximumSizeForEncoding(length, C.kCFStringEncodingUTF8)
+	if maxBufLen == 0 {
+		return ""
+	}
+	buf := make([]byte, maxBufLen)
+	var usedBufLen C.CFIndex
+	_ = C.CFStringGetBytes(s, C.CFRange{0, length}, C.kCFStringEncodingUTF8, C.UInt8(0), C.false, (*C.UInt8)(&buf[0]), maxBufLen, &usedBufLen)
+	return string(buf[:usedBufLen])
 }
