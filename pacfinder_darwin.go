@@ -32,8 +32,6 @@ const CFStringRef_Const kProxiesProxyAutoConfigEnable = CFSTR("ProxyAutoConfigEn
 */
 import "C"
 import (
-	"log"
-	"time"
 	"unsafe"
 )
 
@@ -55,11 +53,11 @@ func (finder *pacFinder) findPACURL() (string, error) {
 		return finder.pacUrl, nil
 	}
 
-	start := time.Now()
+	//start := time.Now()
 	url := finder.getPACUrl()
 
-	elapsed := time.Since(start)
-	log.Printf("PacUrl found in %v", elapsed)
+	//elapsed := time.Since(start)
+	//log.Printf("PacUrl found in %v", elapsed)
 
 	return url, nil
 }
