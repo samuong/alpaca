@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build aix || dragonfly || freebsd || linux || netbsd || openbsd || solaris
 // +build aix dragonfly freebsd linux netbsd openbsd solaris
 
 package main
@@ -21,7 +22,20 @@ import (
 	"strings"
 )
 
-func findPACURL() (string, error) {
+type pacFinder struct {
+	pacUrl string
+	auto   boolean
+}
+
+func newPacFinder(pacUrl string) *pacFinder {
+	return &pacFinder{pacUrl, pacUrl == ""}
+}
+
+func (finder *pacFinder) findPACURL() (string, error) {
+	if !finder.auto {
+		return finder.pacUrl, nil
+	}
+
 	// Hopefully Linux, FreeBSD, Solaris, etc. will have GNOME 3 installed...
 	// TODO: Figure out how to do this for KDE.
 	cmd := exec.Command("gsettings", "get", "org.gnome.system.proxy", "autoconfig-url")
@@ -30,4 +44,13 @@ func findPACURL() (string, error) {
 		return "", err
 	}
 	return strings.Trim(string(out), "'\n"), nil
+}
+
+func (finder *pacFinder) pacChanged() bool {
+	if url, _ := finder.findPACURL(); finder.pacUrl != url {
+		finder.pacUrl = url
+		return true
+	}
+
+	return false
 }

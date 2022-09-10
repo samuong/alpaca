@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build aix || dragonfly || freebsd || linux || netbsd || openbsd || solaris
 // +build aix dragonfly freebsd linux netbsd openbsd solaris
 
 package main
@@ -24,7 +25,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
 
 func TestFindPACURL(t *testing.T) {
 	dir, err := os.MkdirTemp("", "alpaca")

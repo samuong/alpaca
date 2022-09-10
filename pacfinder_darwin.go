@@ -14,76 +14,110 @@
 
 package main
 
-import (
-	"bufio"
-	"fmt"
-	"io"
-	"log"
-	"os/exec"
-	"strings"
-)
+/*
+#cgo LDFLAGS: -framework CoreFoundation -framework SystemConfiguration
+#include <CoreFoundation/CoreFoundation.h>
+#include <SystemConfiguration/SystemConfiguration.h>
 
-func findPACURL() (string, error) {
-	cmd := exec.Command("networksetup", "-listallnetworkservices")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
-	}
-	if err := cmd.Start(); err != nil {
-		return "", err
-	}
-	defer cmd.Wait() //nolint:errcheck
-	r := bufio.NewReader(stdout)
-	// Discard the first line, which isn't the name of a network service.
-	if _, err := r.ReadString('\n'); err != nil {
-		return "", err
-	}
-	for {
-		line, err := r.ReadString('\n')
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return "", err
-		}
-		// An asterisk (*) denotes that a network service is disabled; ignore it.
-		networkService := strings.TrimSuffix(strings.TrimPrefix(line, "(*)"), "\n")
-		url, err := getAutoProxyURL(networkService)
-		if err != nil {
-			log.Printf("Error getting auto proxy URL for %v: %v", networkService, err)
-			continue
-		} else if url == "(null)" || url == "" {
-			continue
-		}
-		return url, nil
-	}
-	return "", nil
+static SCDynamicStoreRef SCDynamicStoreCreate_trampoline() {
+	return SCDynamicStoreCreate(kCFAllocatorDefault, CFSTR("alpaca"), NULL, NULL);
 }
 
-func getAutoProxyURL(networkService string) (string, error) {
-	cmd := exec.Command("networksetup", "-getautoproxyurl", networkService)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
+typedef const CFStringRef CFStringRef_Const;
+
+const CFStringRef_Const kProxiesSettings = CFSTR("State:/Network/Global/Proxies");
+const CFStringRef_Const kProxiesAutoConfigURLString = CFSTR("ProxyAutoConfigURLString");
+const CFStringRef_Const kProxiesProxyAutoConfigEnable = CFSTR("ProxyAutoConfigEnable");
+
+*/
+import "C"
+import (
+	"unsafe"
+)
+
+type pacFinder struct {
+	pacUrl   string
+	storeRef C.SCDynamicStoreRef
+}
+
+func newPacFinder(pacUrl string) *pacFinder {
+	if pacUrl != "" {
+		return &pacFinder{pacUrl, 0}
 	}
-	if err := cmd.Start(); err != nil {
-		return "", err
+
+	return &pacFinder{"", C.SCDynamicStoreCreate_trampoline()}
+}
+
+func (finder *pacFinder) findPACURL() (string, error) {
+	if finder.storeRef == 0 {
+		return finder.pacUrl, nil
 	}
-	defer cmd.Wait() //nolint:errcheck
-	r := bufio.NewReader(stdout)
-	for {
-		line, err := r.ReadString('\n')
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return "", err
-		}
-		if !strings.HasPrefix(line, "URL: ") {
-			// Ignore lines without a URL, including the "Enabled" line. Assume that any
-			// disabled network services might come back online at some point, in which
-			// case we should start using the PAC URL for that service.
-			continue
-		}
-		return strings.TrimSuffix(strings.TrimPrefix(line, "URL: "), "\n"), nil
+
+	//start := time.Now()
+	url := finder.getPACUrl()
+
+	//elapsed := time.Since(start)
+	//log.Printf("PacUrl found in %v", elapsed)
+
+	return url, nil
+}
+
+func (finder *pacFinder) pacChanged() bool {
+	if url, _ := finder.findPACURL(); finder.pacUrl != url {
+		finder.pacUrl = url
+		return true
 	}
-	return "", fmt.Errorf("No auto-proxy URL for network service %v", networkService)
+
+	return false
+}
+
+func (finder *pacFinder) getPACUrl() string {
+	dict := C.CFDictionaryRef(C.SCDynamicStoreCopyValue(finder.storeRef, C.kProxiesSettings))
+
+	if dict == 0 {
+		return ""
+	}
+
+	defer C.CFRelease(C.CFTypeRef(dict))
+
+	pacEnabled := C.CFNumberRef(C.CFDictionaryGetValue(dict, unsafe.Pointer(C.kProxiesProxyAutoConfigEnable)))
+	if pacEnabled == 0 {
+		return ""
+	}
+
+	var enabled C.int
+	C.CFNumberGetValue(pacEnabled, C.kCFNumberIntType, unsafe.Pointer(&enabled))
+	if enabled == 0 {
+		return ""
+	}
+
+	url := C.CFStringRef_Const(C.CFDictionaryGetValue(dict, unsafe.Pointer(C.kProxiesAutoConfigURLString)))
+
+	if url == 0 {
+		return ""
+	}
+
+	return CFStringToString(url)
+}
+
+// CGO Helpers below..
+
+// CFStringToString converts a CFStringRef to a string.
+func CFStringToString(s C.CFStringRef) string {
+	p := C.CFStringGetCStringPtr(s, C.kCFStringEncodingUTF8)
+	if p != nil {
+		return C.GoString(p)
+	}
+	length := C.CFStringGetLength(s)
+	if length == 0 {
+		return ""
+	}
+	maxBufLen := C.CFStringGetMaximumSizeForEncoding(length, C.kCFStringEncodingUTF8)
+	if maxBufLen == 0 {
+		return ""
+	}
+	buf := make([]byte, maxBufLen)
+	var usedBufLen C.CFIndex
+	_ = C.CFStringGetBytes(s, C.CFRange{0, length}, C.kCFStringEncodingUTF8, C.UInt8(0), C.false, (*C.UInt8)(&buf[0]), maxBufLen, &usedBufLen)
+	return string(buf[:usedBufLen])
 }

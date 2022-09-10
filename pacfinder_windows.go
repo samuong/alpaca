@@ -14,7 +14,17 @@
 
 package main
 
-func findPACURL() (string, error) {
+type pacFinder struct{}
+
+func newPacFinder() *pacFinder {
+	return &pacFinder{}
+}
+
+func (finder *pacFinder) findPACURL() (string, error) {
+	if finder.pacUrl != "" {
+		return finder.pacUrl, nil
+	}
+
 	// TODO: Implement this.
 	return "", nil
 }
