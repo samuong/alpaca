@@ -30,16 +30,6 @@ func TestFindPACURLStatic(t *testing.T) {
 	require.Equal(t, pac, foundPac)
 }
 
-func TestFindPACURL(t *testing.T) {
-	finder := newPacFinder("")
-
-	foundPac, _ := finder.findPACURL()
-
-	require.NotEqual(t, "", foundPac)
-}
-
-// Removed TestFindPACURLWhenNetworkSetupIsntAvailable - we don't rely on NetworkSetup anymore
-
 func TestFallbackToDefaultWhenNoPACUrl(t *testing.T) {
 	// arrange
 	cmdStr := "scutil --proxy | awk '/ProxyAutoConfigURLString/ {printf $3}'"
