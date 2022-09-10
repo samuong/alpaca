@@ -25,3 +25,7 @@ func newPacFinder(pacURL string) *pacFinder {
 func (finder *pacFinder) findPACURL() (string, error) {
 	return finder.pacURL, nil
 }
+
+func (finder *pacFinder) pacChanged() bool {
+	return false
+}
