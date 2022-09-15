@@ -1,4 +1,4 @@
-// Copyright 2019, 2021 The Alpaca Authors
+// Copyright 2019, 2021, 2022 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,17 +14,18 @@
 
 package main
 
-type pacFinder struct{}
+type pacFinder struct{
+	pacURL string
+}
 
-func newPacFinder() *pacFinder {
-	return &pacFinder{}
+func newPacFinder(pacURL string) *pacFinder {
+	return &pacFinder{pacURL: pacURL}
 }
 
 func (finder *pacFinder) findPACURL() (string, error) {
-	if finder.pacUrl != "" {
-		return finder.pacUrl, nil
-	}
+	return finder.pacURL, nil
+}
 
-	// TODO: Implement this.
-	return "", nil
+func (finder *pacFinder) pacChanged() bool {
+	return false
 }
