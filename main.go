@@ -79,15 +79,14 @@ func main() {
 		os.Exit(0)
 	}
 
+	s := createServer(*host, *port, *pacurl, a)
 	log.Fatal(gogroup(networks(*host), func(network string) error {
-		s := createServer(*host, *port, *pacurl, a)
 		ln, err := net.Listen(network, s.Addr)
 		if err != nil {
 			return err
-		} else {
-			log.Printf("Listening on %s %s", network, s.Addr)
-			return s.Serve(ln)
 		}
+		log.Printf("Listening on %s %s", network, s.Addr)
+		return s.Serve(ln)
 	}))
 }
 
