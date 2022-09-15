@@ -7,7 +7,7 @@ import (
 
 func networks(hostname string) []string {
 	if hostname == "" {
-		return []string{"net"}
+		return []string{"tcp"}
 	}
 	addrs, err := net.LookupIP(hostname)
 	if err != nil {

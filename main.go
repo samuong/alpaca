@@ -81,11 +81,7 @@ func main() {
 
 	log.Fatal(gogroup(networks(*host), func(network string) error {
 		s := createServer(*host, *port, *pacurl, a)
-		addr := s.Addr
-		if addr == "" {
-			addr = ":http"
-		}
-		ln, err := net.Listen(network, addr)
+		ln, err := net.Listen(network, s.Addr)
 		if err != nil {
 			return err
 		} else {
