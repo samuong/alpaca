@@ -81,12 +81,12 @@ func main() {
 
 	s := createServer(*host, *port, *pacurl, a)
 	log.Fatal(gogroup(networks(*host), func(network string) error {
-		listener, err := net.Listen(network, s.Addr)
+		l, err := net.Listen(network, s.Addr)
 		if err != nil {
 			return err
 		}
 		log.Printf("Listening on %s %s", network, s.Addr)
-		return s.Serve(listener)
+		return s.Serve(l)
 	}))
 }
 
