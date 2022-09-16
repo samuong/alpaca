@@ -5,14 +5,17 @@ all: build lint
 build:
 	go build
 
-.PHONY: build-archs
-build-archs:
+# Build all archs to check for compiler errors. Output will be deleted.
+.PHONY: all-osarchs
+all-osarchs:
+	TMPDIR=$${TMPDIR:-/tmp}
 	GOOSNOT="android|ios|js|plan9"; \
 	for dist in $$(go tool dist list | egrep -v "^($$GOOSNOT)/|^darwin/amd64$$"); do \
-		echo "GOOS=$${dist%/*} GOARCH=$${dist#*/}"; \
-		GOOS=$${dist%/*} GOARCH=$${dist#*/} go build; \
+		echo "  GOOS=$${dist%/*} GOARCH=$${dist#*/}"; \
+		GOOS=$${dist%/*} GOARCH=$${dist#*/} go build -o $$TMPDIR/alpaca && \
+			printf '\e[A\e[1;32m✔\e[0m\n'; \
 	done; \
-	rm alpaca
+	rm $$TMPDIR/alpaca
 
 .PHONY: test
 test:
