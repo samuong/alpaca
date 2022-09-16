@@ -5,7 +5,8 @@ all: build lint
 build:
 	go build
 
-# Build all archs to check for compiler errors. Output will be deleted.
+# Build all compiling os-arch combinations just to check for regressions. Output
+# binaries get deleted.
 .PHONY: all-osarchs
 all-osarchs:
 	TMPDIR=$${TMPDIR:-/tmp}
