@@ -79,11 +79,23 @@ func main() {
 		os.Exit(0)
 	}
 
+	errch := make(chan error)
+
 	s := createServer(*host, *port, *pacurl, a)
-	log.Printf("Listening on %s", s.Addr)
-	if err := s.ListenAndServe(); err != nil {
-		log.Fatal(err)
+
+	for _, network := range networks(*host) {
+		go func(network string) {
+			l, err := net.Listen(network, s.Addr)
+			if err != nil {
+				errch <- err
+			} else {
+				log.Printf("Listening on %s %s", network, s.Addr)
+				errch <- s.Serve(l)
+			}
+		}(network)
 	}
+
+	log.Fatal(<-errch)
 }
 
 func createServer(host string, port int, pacurl string, a *authenticator) *http.Server {
@@ -108,4 +120,32 @@ func createServer(host string, port int, pacurl string, a *authenticator) *http.
 		// value to disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
+}
+
+func networks(hostname string) []string {
+	if hostname == "" {
+		return []string{"tcp"}
+	}
+	addrs, err := net.LookupIP(hostname)
+	if err != nil {
+		log.Fatal(err)
+	}
+	nets := make([]string, 0, 2)
+	ipv4 := false
+	ipv6 := false
+	for _, addr := range addrs {
+		// addr == net.IPv4len doesn't work because all addrs use IPv6 format.
+		if addr.To4() != nil {
+			ipv4 = true
+		} else {
+			ipv6 = true
+		}
+	}
+	if ipv4 {
+		nets = append(nets, "tcp4")
+	}
+	if ipv6 {
+		nets = append(nets, "tcp6")
+	}
+	return nets
 }
