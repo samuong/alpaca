@@ -79,15 +79,22 @@ func main() {
 		os.Exit(0)
 	}
 
+	errch := make(chan error)
+
 	s := createServer(*host, *port, *pacurl, a)
-	log.Fatal(gogroup(networks(*host), func(network string) error {
-		l, err := net.Listen(network, s.Addr)
-		if err != nil {
-			return err
-		}
-		log.Printf("Listening on %s %s", network, s.Addr)
-		return s.Serve(l)
-	}))
+
+	for _, network := range networks(*host) {
+		go func(network string) error {
+			l, err := net.Listen(network, s.Addr)
+			if err != nil {
+				return err
+			}
+			log.Printf("Listening on %s %s", network, s.Addr)
+			return s.Serve(l)
+		}(network)
+	}
+
+	log.Fatal(<-errch)
 }
 
 func createServer(host string, port int, pacurl string, a *authenticator) *http.Server {
