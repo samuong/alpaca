@@ -88,5 +88,5 @@ Once you've set this environment variable, you can start Alpaca by running
 
 [1]: https://github.com/samuong/alpaca/releases
 [2]: https://img.shields.io/github/v/tag/samuong/alpaca.svg?logo=github&label=latest
-[3]: https://img.shields.io/github/workflow/status/samuong/alpaca/Continuous%20Integration/master
+[3]: https://img.shields.io/github/actions/workflow/status/samuong/alpaca/ci.yml?branch=main
 [4]: https://img.shields.io/github/downloads/samuong/alpaca/latest/total
