@@ -16,11 +16,9 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"runtime"
 	"strings"
@@ -38,7 +36,6 @@ type pacFetcher struct {
 	pacFinder  *pacFinder
 	monitor    netMonitor
 	client     *http.Client
-	lookupAddr func(context.Context, string) ([]string, error)
 	connected  bool
 	//cache  []byte
 	//modified time.Time
@@ -50,7 +47,9 @@ type pacFetcher struct {
 func newPACFetcher(pacurl string) *pacFetcher {
 	client := &http.Client{Timeout: 30 * time.Second}
 	if strings.HasPrefix(pacurl, "file:") {
-		log.Printf("Warning: Alpaca supports file:// PAC URLs, but Windows and macOS don't")
+		log.Print("Warning: When using a local PAC file, the online/offline status can't ",
+			"be determined by the fact that the PAC file is downloaded. Make sure you ",
+			"check for proxy connectivity in your PAC file!")
 		if runtime.GOOS == "windows" {
 			client.Transport = http.NewFileTransport(http.Dir("C:"))
 		} else {
@@ -67,7 +66,6 @@ func newPACFetcher(pacurl string) *pacFetcher {
 		pacFinder:  newPacFinder(pacurl),
 		monitor:    newNetMonitor(),
 		client:     client,
-		lookupAddr: net.DefaultResolver.LookupAddr,
 	}
 }
 
@@ -114,23 +112,7 @@ func (pf *pacFetcher) download() []byte {
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, maxResponseBytes)
 	if err == io.EOF {
-		if strings.HasPrefix(pacurl, "file:") {
-			// When using a local PAC file the online/offline status can't be determined
-			// by the fact that the PAC file is returned. Instead try reverse DNS
-			// resolution of Google's Public DNS Servers.
-			const timeout = 2 * time.Second
-			ctx, cancel := context.WithTimeout(context.TODO(), timeout)
-			defer cancel()
-			_, err1 := pf.lookupAddr(ctx, "8.8.8.8")
-			_, err2 := pf.lookupAddr(ctx, "2001:4860:4860::8888")
-			if err1 == nil || err2 == nil {
-				log.Printf("Successfully resolved public address; bypassing proxy")
-			} else {
-				pf.connected = true
-			}
-		} else {
-			pf.connected = true
-		}
+		pf.connected = true
 		return buf.Bytes()
 	} else if err != nil {
 		log.Printf("Error reading PAC JS from response body: %q", err)
