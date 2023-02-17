@@ -30,6 +30,10 @@ $ go get -v -u github.com/samuong/alpaca
 
 Alpaca can be downloaded from the [GitHub releases page][1].
 
+## Install from distribution packages
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/alpaca-proxy.svg)](https://repology.org/project/alpaca-proxy/versions)
+
 ## Usage
 
 Start Alpaca by running the `alpaca` binary.
