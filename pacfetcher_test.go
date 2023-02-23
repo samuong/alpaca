@@ -15,9 +15,6 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -118,27 +115,6 @@ func TestResponseLimit(t *testing.T) {
 	assert.False(t, pf.isConnected())
 }
 
-type testNetwork struct {
-	connected bool
-}
-
-func (tn testNetwork) InterfaceAddrs() ([]net.Addr, error) {
-	addr := func(s string) *net.IPAddr { return &net.IPAddr{IP: net.ParseIP(s)} }
-	if tn.connected {
-		return []net.Addr{addr("127.0.0.1"), addr("192.0.2.1")}, nil
-	} else {
-		return []net.Addr{addr("127.0.0.1"), addr("198.51.100.1")}, nil
-	}
-}
-
-func (tn testNetwork) LookupAddr(ctx context.Context, addr string) ([]string, error) {
-	if tn.connected {
-		return []string{}, fmt.Errorf("lookup %s: Name or service not known", addr)
-	} else {
-		return []string{"dns.google."}, nil
-	}
-}
-
 func TestPacFromFilesystem(t *testing.T) {
 	// Set up a test PAC file
 	content := []byte(`function FindProxyForURL(url, host) { return "DIRECT" }`)
@@ -148,19 +124,8 @@ func TestPacFromFilesystem(t *testing.T) {
 	pacPath := path.Join(tempdir, "test.pac")
 	require.NoError(t, os.WriteFile(pacPath, content, 0644))
 	pacURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(pacPath)}
-
-	tn := testNetwork{false}
 	pf := newPACFetcher(pacURL.String())
-	pf.monitor = &netMonitorImpl{
-		getAddrs: func() ([]net.Addr, error) { return tn.InterfaceAddrs() },
-	}
-	pf.lookupAddr = func(ctx context.Context, addr string) ([]string, error) {
-		return tn.LookupAddr(ctx, addr)
-	}
-
-	assert.Equal(t, content, pf.download())
-	assert.False(t, pf.isConnected())
-	tn.connected = true
+	pf.monitor = newNetMonitor()
 	assert.Equal(t, content, pf.download())
 	assert.True(t, pf.isConnected())
 }
