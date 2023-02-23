@@ -15,7 +15,6 @@
 package main
 
 import (
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -125,14 +124,8 @@ func TestPacFromFilesystem(t *testing.T) {
 	pacPath := path.Join(tempdir, "test.pac")
 	require.NoError(t, os.WriteFile(pacPath, content, 0644))
 	pacURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(pacPath)}
-
 	pf := newPACFetcher(pacURL.String())
-	pf.monitor = &netMonitorImpl{
-		getAddrs: func() ([]net.Addr, error) {
-			return []net.Addr{&net.IPAddr{IP: net.ParseIP("127.0.0.1")}}, nil
-		},
-	}
-
+	pf.monitor = newNetMonitor()
 	assert.Equal(t, content, pf.download())
 	assert.True(t, pf.isConnected())
 }
