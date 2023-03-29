@@ -39,10 +39,10 @@ func TestFindProxyForURL(t *testing.T) {
 	tests := []struct {
 		name, input, expected string
 	}{
-		{"NoScheme", "//alpaca.test", "https://alpaca.test"},
+		{"NoScheme", "//alpaca.test", "https://alpaca.test/"},
 		{"HTTP", "http://alpaca.test/a?b=c#d", "http://alpaca.test/a?b=c#d"},
-		{"HTTPS", "https://alpaca.test/a?b=c#d", "https://alpaca.test"},
-		{"WSS", "wss://alpaca.test/a?b=c#d", "wss://alpaca.test"},
+		{"HTTPS", "https://alpaca.test/a?b=c#d", "https://alpaca.test/"},
+		{"WSS", "wss://alpaca.test/a?b=c#d", "wss://alpaca.test/"},
 	}
 	for _, test := range tests {
 		var pr PACRunner

@@ -87,8 +87,8 @@ func (pr *PACRunner) FindProxyForURL(u url.URL) (string, error) {
 		// Like Chrome, also strip the path and query for wss:// URLs (secure WebSockets).
 		// https://cs.chromium.org/chromium/src/net/proxy_resolution/proxy_resolution_service.cc?rcl=fba6691ffca770dd0c916418601b9c9c019a2929&l=383
 		// It also seems like a good idea to strip the fragment, so do that too.
-		u.Path = ""
-		u.RawPath = ""
+		u.Path = "/"
+		u.RawPath = "/"
 		u.RawQuery = ""
 		u.Fragment = ""
 	}
