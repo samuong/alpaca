@@ -23,7 +23,7 @@ If you've got the [Go](https://golang.org/cmd/go/) tool installed, you can
 install using:
 
 ```sh
-$ go get -v -u github.com/samuong/alpaca
+$ go install github.com/samuong/alpaca/v2@latest
 ```
 
 ## Download Binary
