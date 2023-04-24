@@ -138,6 +138,10 @@ func isInNet(call otto.FunctionCall) otto.Value {
 	pattern := call.Argument(1).String()
 	mask := call.Argument(2).String()
 	buf := net.ParseIP(mask).To4()
+	if len(buf) != 4 {
+		return toValue(false)
+	}
+
 	m := net.IPv4Mask(buf[0], buf[1], buf[2], buf[3])
 	maskedIP := resolve(host).Mask(m)
 	maskedPattern := net.ParseIP(pattern).To4().Mask(m)
