@@ -117,13 +117,13 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	// Write the response directly to the client connection. If we use Go's ResponseWriter, it
 	// will automatically insert a Content-Length header, which is not allowed in a 2xx CONNECT
 	// response (see https://tools.ietf.org/html/rfc7231#section-4.3.6).
-	resp := &http.Response{
-		StatusCode:    http.StatusOK,
-		ProtoMajor:    req.ProtoMajor,
-		ProtoMinor:    req.ProtoMinor,
-		ContentLength: -1,
+	var resp []byte
+	if req.ProtoAtLeast(1, 1) {
+		resp = []byte("HTTP/1.1 200 Connection Established\r\n\r\n")
+	} else {
+		resp = []byte("HTTP/1.0 200 Connection Established\r\n\r\n")
 	}
-	if err := resp.Write(client); err != nil {
+	if _, err := client.Write(resp); err != nil {
 		log.Printf("[%d] Error writing response: %v", id, err)
 		return
 	}
