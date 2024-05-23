@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"io"
 )
 
 // transport creates and manages the lifetime of a net.Conn. Between the time that a remote server
@@ -57,7 +58,24 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := req.Write(t.conn); err != nil {
 		return nil, err
 	}
-	return http.ReadResponse(t.reader, req)
+	var resp2 *http.Response
+	var err2 error
+
+	resp2,err2 = http.ReadResponse(t.reader, req)
+
+	if (resp2 != nil) {
+		if resp2.StatusCode == http.StatusProxyAuthRequired { //if 407 extra http body is not used, discard it issue #118
+															  //if http body is not read from stream here, it will get stuck in ioreader and cause a malformed HTTP response error i.e. <html<head>
+			//pop the stream reader
+			bodyBytes, _ := io.ReadAll(resp2.Body)
+			_ = bodyBytes //unused variable
+		}
+	}	
+
+	return resp2,err2 //return the actual error
+
+
+	//return http.ReadResponse(t.reader, req)
 }
 
 func (t *transport) hijack() net.Conn {
