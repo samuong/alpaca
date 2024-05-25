@@ -182,30 +182,25 @@ func convertAddr(call otto.FunctionCall) otto.Value {
 }
 
 func myIpAddress(call otto.FunctionCall) otto.Value {
-	// When the host has multiple IPs, Chrome seems to go to some length to find the best one
-	// (see https://cs.chromium.org/chromium/src/net/proxy_resolution/pac_library.cc?g=0&l=22),
-	// but we'll just return the first non-loopback IPv4 address that we find (or "127.0.0.1" if
-	// there are none) and hope this is good enough.
-	addrs, err := net.InterfaceAddrs()
+	// By dialling a UDP address, we find out what the local IP address is.
+	// No packets are ever sent, because UDP is "connectionless".
+	// The IP address chosen is in one of the "documentation" prefixes that are guaranteed not to exist on the
+	// internet, and is therefore "safe" to use. It will generally follow the default route set in the OS.
+	conn, err := net.Dial("udp", "192.0.2.1:53") // RFC5737 TEST-NET-1
 	if err != nil {
 		return otto.UndefinedValue()
 	}
-	for _, addr := range addrs {
-		s := addr.String()
-		// Remove the first rune that is not either a digit or a dot, as well as anything
-		// that follows it. This turns strings like "192.0.2.1:25" and "192.168.1.6/24" into
-		// parsable IPv4 addresses.
-		if i := strings.IndexFunc(s, func(r rune) bool {
-			return !strings.ContainsRune("0123456789.", r)
-		}); i != -1 {
-			s = s[0:i]
-		}
-		if ipv4 := net.ParseIP(s).To4(); ipv4 != nil && !ipv4.IsLoopback() {
-			return toValue(ipv4.String())
-		}
+	defer conn.Close()
+
+	// If for some bizarre reason we do not get a UDPAddr back, return a default value rather than panicking.
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return toValue("127.0.0.1")
 	}
-	return toValue("127.0.0.1")
+
+	return toValue(addr.IP.String())
 }
+
 
 func dnsDomainLevels(call otto.FunctionCall) otto.Value {
 	host := call.Argument(0).String()
