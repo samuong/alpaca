@@ -182,6 +182,18 @@ func convertAddr(call otto.FunctionCall) otto.Value {
 }
 
 func myIpAddress(call otto.FunctionCall) otto.Value {
+	remotes := []string{"8.8.8.8:53", "10.0.0.0:53", "172.16.0.0:53", "192.168.0.0:53"}
+	for _, remote := range remotes {
+		conn, err := net.Dial("udp4", remote)
+		if err != nil {
+			continue
+		}
+		local := conn.LocalAddr().(*net.UDPAddr).IP
+		if local.IsLoopback() {
+			continue
+		}
+		return toValue(local.String())
+	}
 	// When the host has multiple IPs, Chrome seems to go to some length to find the best one
 	// (see https://cs.chromium.org/chromium/src/net/proxy_resolution/pac_library.cc?g=0&l=22),
 	// but we'll just return the first non-loopback IPv4 address that we find (or "127.0.0.1" if
