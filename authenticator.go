@@ -50,6 +50,7 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 		log.Printf("Expected response with status 407, got %s", resp.Status)
 		return resp, nil
 	}
+	resp.Body.Close()
 	challenge, err := base64.StdEncoding.DecodeString(
 		strings.TrimPrefix(resp.Header.Get("Proxy-Authenticate"), "NTLM "))
 	if err != nil {
