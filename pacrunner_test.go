@@ -17,6 +17,7 @@ package main
 import (
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -555,5 +556,28 @@ func TestTimeRange(t *testing.T) {
 				check(t, test.args, mocktime, expected)
 			})
 		}
+	}
+}
+
+func TestNetDialUDP(t *testing.T) {
+	hostname, err := os.Hostname()
+	require.NoError(t, err)
+	ipAddr, err := net.ResolveIPAddr("ip", hostname)
+	require.NoError(t, err)
+	t.Logf("%s resolves to %s", hostname, ipAddr.String())
+	addresses := []string{
+		net.JoinHostPort(hostname, "52"),
+		"192.0.2.1:53",
+		"8.8.8.8:53",
+		"localhost:53",
+		"10.0.0.0:53",
+		"172.16.0.0:53",
+		"192.168.0.0:53",
+	}
+	for _, address := range addresses {
+		conn, err := net.Dial("udp4", address)
+		require.NoError(t, err)
+		localAddr := conn.LocalAddr().(*net.UDPAddr).IP.String()
+		t.Logf("%s <- %s", address, localAddr)
 	}
 }
