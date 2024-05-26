@@ -203,8 +203,8 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 		}
 		return
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+		resp.Body.Close()
 		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
 		_, err = rd.Seek(0, io.SeekStart)
 		if err != nil {
@@ -217,9 +217,9 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 				w.WriteHeader(http.StatusBadGateway)
 				return
 			}
-			defer resp.Body.Close()
 		}
 	}
+	defer resp.Body.Close()
 	copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
