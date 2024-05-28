@@ -1,4 +1,4 @@
-// Copyright 2019, 2021, 2022, 2023 The Alpaca Authors
+// Copyright 2019, 2021, 2022, 2023, 2024 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -203,8 +203,8 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 		}
 		return
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+		resp.Body.Close()
 		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
 		_, err = rd.Seek(0, io.SeekStart)
 		if err != nil {
@@ -217,9 +217,9 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 				w.WriteHeader(http.StatusBadGateway)
 				return
 			}
-			defer resp.Body.Close()
 		}
 	}
+	defer resp.Body.Close()
 	copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
