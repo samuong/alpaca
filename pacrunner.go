@@ -1,4 +1,4 @@
-// Copyright 2019, 2021, 2023 The Alpaca Authors
+// Copyright 2019, 2021, 2023, 2024 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -182,29 +183,75 @@ func convertAddr(call otto.FunctionCall) otto.Value {
 }
 
 func myIpAddress(call otto.FunctionCall) otto.Value {
-	// When the host has multiple IPs, Chrome seems to go to some length to find the best one
-	// (see https://cs.chromium.org/chromium/src/net/proxy_resolution/pac_library.cc?g=0&l=22),
-	// but we'll just return the first non-loopback IPv4 address that we find (or "127.0.0.1" if
-	// there are none) and hope this is good enough.
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return otto.UndefinedValue()
-	}
-	for _, addr := range addrs {
-		s := addr.String()
-		// Remove the first rune that is not either a digit or a dot, as well as anything
-		// that follows it. This turns strings like "192.0.2.1:25" and "192.168.1.6/24" into
-		// parsable IPv4 addresses.
-		if i := strings.IndexFunc(s, func(r rune) bool {
-			return !strings.ContainsRune("0123456789.", r)
-		}); i != -1 {
-			s = s[0:i]
+	// https://chromium.googlesource.com/chromium/src/+/ee43fa5328856129f46566b2ea1be5811739681c/net/docs/proxy.md#Resolving-client_s-IP-address-within-a-PAC-script-using-myIpAddress
+	public := []string{"8.8.8.8", "2001:4860:4860::8888"}
+	for _, remoteAddr := range public {
+		if localAddr := probeRoute(remoteAddr); localAddr != "" {
+			return toValue(localAddr)
 		}
-		if ipv4 := net.ParseIP(s).To4(); ipv4 != nil && !ipv4.IsLoopback() {
-			return toValue(ipv4.String())
+	}
+	if ip := resolveHostname(); ip != "" {
+		return toValue(ip)
+	}
+	private := []string{"10.0.0.0", "172.16.0.0", "192.168.0.0", "FC00::"}
+	for _, remoteAddr := range private {
+		if localAddr := probeRoute(remoteAddr); localAddr != "" {
+			return toValue(localAddr)
 		}
 	}
 	return toValue("127.0.0.1")
+}
+
+// probeRoute creates a UDP "connection" to the remote address, and returns the
+// local interface address. This does involve a system call, but does not
+// generate any network traffic since UDP is a connectionless protocol.
+func probeRoute(remote string) string {
+	conn, err := net.Dial("udp", net.JoinHostPort(remote, "80"))
+	if err != nil {
+		return ""
+	}
+	local, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		// XXX: This is very unexpected, is it better to panic here?
+		return ""
+	}
+	if local.IP.IsLoopback() ||
+		local.IP.IsLinkLocalUnicast() ||
+		local.IP.IsLinkLocalMulticast() {
+		return ""
+	}
+	return local.IP.String()
+}
+
+// resolveHostname does a DNS resolve of the machine's hostname, and returns
+// the first IPv4 result if there is one, or the first IPv6 address, or the
+// empty string.
+func resolveHostname() string {
+	host, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return ""
+	}
+	var ipv6 net.IP
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			continue
+		}
+		if ipv4 := ip.To4(); len(ipv4) == net.IPv4len {
+			return ipv4.String()
+		} else if len(ip) == net.IPv6len && ipv6 == nil {
+			// We explicitly favour IPv4 over IPv6, so only return
+			// an IPv6 address if we can't find an IPv4 one.
+			ipv6 = ip
+		}
+	}
+	if ipv6 == nil {
+		return ""
+	}
+	return ipv6.String()
 }
 
 func dnsDomainLevels(call otto.FunctionCall) otto.Value {

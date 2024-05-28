@@ -1,4 +1,4 @@
-// Copyright 2019, 2020, 2021, 2023 The Alpaca Authors
+// Copyright 2019, 2020, 2021, 2023, 2024 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -224,8 +224,8 @@ func TestMyIpAddress(t *testing.T) {
 	require.NoError(t, err)
 	output, err := value.ToString()
 	require.NoError(t, err)
-	// Check it's a valid IPv4 address.
-	assert.NotNil(t, net.ParseIP(output).To4())
+	// Check it's a valid IPv4 or IPv6 address.
+	assert.NotNil(t, net.ParseIP(output))
 	// Check that it's our IP address. Technically there's a race condition here (since both
 	// myIpAddress and this function will call net.InterfaceAddrs() separately), but this is
 	// only going to cause flakiness if the network changes during the test, which is unlikely.
