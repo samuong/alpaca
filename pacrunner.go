@@ -183,17 +183,17 @@ func convertAddr(call otto.FunctionCall) otto.Value {
 }
 
 func myIpAddress(call otto.FunctionCall) otto.Value {
+	// This function works like Chrome's myIpAddress() function, except
+	// that we avoid returning an IPv6 address.
+	// https://github.com/samuong/alpaca/issues/10
 	// https://chromium.googlesource.com/chromium/src/+/ee43fa5328856129f46566b2ea1be5811739681c/net/docs/proxy.md#Resolving-client_s-IP-address-within-a-PAC-script-using-myIpAddress
-	public := []string{"8.8.8.8", "2001:4860:4860::8888"}
-	for _, remoteAddr := range public {
-		if localAddr := probeRoute(remoteAddr); localAddr != "" {
-			return toValue(localAddr)
-		}
+	if localAddr := probeRoute("8.8.8.8"); localAddr != "" {
+		return toValue(localAddr)
 	}
 	if ip := resolveHostname(); ip != "" {
 		return toValue(ip)
 	}
-	private := []string{"10.0.0.0", "172.16.0.0", "192.168.0.0", "FC00::"}
+	private := []string{"10.0.0.0", "172.16.0.0", "192.168.0.0"}
 	for _, remoteAddr := range private {
 		if localAddr := probeRoute(remoteAddr); localAddr != "" {
 			return toValue(localAddr)
@@ -206,7 +206,7 @@ func myIpAddress(call otto.FunctionCall) otto.Value {
 // local interface address. This does involve a system call, but does not
 // generate any network traffic since UDP is a connectionless protocol.
 func probeRoute(remote string) string {
-	conn, err := net.Dial("udp", net.JoinHostPort(remote, "80"))
+	conn, err := net.Dial("udp4", net.JoinHostPort(remote, "80"))
 	if err != nil {
 		return ""
 	}
@@ -224,8 +224,7 @@ func probeRoute(remote string) string {
 }
 
 // resolveHostname does a DNS resolve of the machine's hostname, and returns
-// the first IPv4 result if there is one, or the first IPv6 address, or the
-// empty string.
+// the first IPv4 result if there is one, or the empty string.
 func resolveHostname() string {
 	host, err := os.Hostname()
 	if err != nil {
@@ -235,23 +234,15 @@ func resolveHostname() string {
 	if err != nil {
 		return ""
 	}
-	var ipv6 net.IP
 	for _, ip := range ips {
 		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 			continue
 		}
 		if ipv4 := ip.To4(); len(ipv4) == net.IPv4len {
 			return ipv4.String()
-		} else if len(ip) == net.IPv6len && ipv6 == nil {
-			// We explicitly favour IPv4 over IPv6, so only return
-			// an IPv6 address if we can't find an IPv4 one.
-			ipv6 = ip
 		}
 	}
-	if ipv6 == nil {
-		return ""
-	}
-	return ipv6.String()
+	return ""
 }
 
 func dnsDomainLevels(call otto.FunctionCall) otto.Value {
