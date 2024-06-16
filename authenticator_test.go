@@ -26,12 +26,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samuong/go-ntlmssp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type ntlmServer struct {
-	t        *testing.T
+	t *testing.T
 }
 
 func (s ntlmServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -73,13 +74,13 @@ func TestNtlmAuth(t *testing.T) {
 	defer server.Close()
 	serverAddr := server.Listener.Addr().String()
 	tr := &http.Transport{Proxy: http.ProxyURL(&url.URL{Host: serverAddr})}
-	req, err := http.NewRequest(http.MethodGet, "http://" + serverAddr, nil)
+	req, err := http.NewRequest(http.MethodGet, "http://"+serverAddr, nil)
 	require.NoError(t, err)
 	resp, err := tr.RoundTrip(req)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, http.StatusProxyAuthRequired, resp.StatusCode)
-	auth := &authenticator{"isis", "malory", getNtlmHash([]byte("guest"))}
+	auth := &authenticator{"isis", "malory", ntlmssp.GetNtlmHash("guest")}
 	resp, err = auth.do(req, tr)
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -87,8 +88,4 @@ func TestNtlmAuth(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "Access granted", string(body))
-}
-
-func TestGetNtlmHash(t *testing.T) {
-	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", getNtlmHash([]byte("guest")))
 }
