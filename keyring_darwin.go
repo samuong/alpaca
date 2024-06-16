@@ -22,12 +22,13 @@ import (
 	"strings"
 
 	"github.com/keybase/go-keychain"
+	"github.com/samuong/go-ntlmssp"
 )
 
 const keyringSupported = true
 
 type keyring struct {
-	execCommand  func(name string, arg ...string) *exec.Cmd
+	execCommand func(name string, arg ...string) *exec.Cmd
 }
 
 func fromKeyring() *keyring {
@@ -80,7 +81,7 @@ func (k *keyring) getCredentials() (*authenticator, error) {
 		return nil, errors.New("Couldn't retrieve AD domain and username from NoMAD.")
 	}
 	user, domain := substrs[0], substrs[1]
-	hash := getNtlmHash([]byte(k.readPasswordFromKeychain(userPrincipal)))
+	hash := ntlmssp.GetNtlmHash(k.readPasswordFromKeychain(userPrincipal))
 	log.Printf("Found NoMAD credentials for %s\\%s in system keychain", domain, user)
 	return &authenticator{domain, user, hash}, nil
 }
