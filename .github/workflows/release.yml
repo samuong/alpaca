@@ -45,7 +45,7 @@ jobs:
             goos: 'windows'
             goarch: 'amd64'
             ext: '.exe'
-        go: [ '1.17' ]
+        go: [ '1.22' ]
 
     runs-on: ${{ matrix.target.os }}
 

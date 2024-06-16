@@ -8,8 +8,6 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/robertkrimen/otto v0.4.0 h1:/c0GRrK1XDPcgIasAsnlpBT5DelIeB9U/Z/JCQsgr7E=
 github.com/robertkrimen/otto v0.4.0/go.mod h1:uW9yN1CYflmUQYvAMS0m+ZiNo3dMzRUDQJX0jWbzgxw=
-github.com/samuong/go-ntlmssp v0.0.0-20240616021033-020f032891ef h1:1sDbz+SBpTrVX99rROA3EiW8p0+nD+TN7e0K80nmXl8=
-github.com/samuong/go-ntlmssp v0.0.0-20240616021033-020f032891ef/go.mod h1:ioghl8+axI3Mx5Cs1LU/LzW18JE71qbwXwpOv/F9lCc=
 github.com/samuong/go-ntlmssp v0.0.0-20240616070040-65a20607c744 h1:AD1UeK7fZRLY7TEeQQZNTuHX3RAspwLUC36mNi47Xcs=
 github.com/samuong/go-ntlmssp v0.0.0-20240616070040-65a20607c744/go.mod h1:ioghl8+axI3Mx5Cs1LU/LzW18JE71qbwXwpOv/F9lCc=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=
