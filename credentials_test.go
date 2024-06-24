@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/samuong/go-ntlmssp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +30,7 @@ func TestTerminal(t *testing.T) {
 	}
 	a, err := fakeTerm.forUser("isis", "malory").getCredentials()
 	require.NoError(t, err)
-	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", a.hash)
+	assert.Equal(t, "malory@isis:823893adfad2cda6e1a414f3ebdf58f7", a.String())
 }
 
 func TestEnvVar(t *testing.T) {
@@ -37,7 +38,7 @@ func TestEnvVar(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "isis", a.domain)
 	assert.Equal(t, "malory", a.username)
-	assert.Equal(t, "823893adfad2cda6e1a414f3ebdf58f7", a.hash)
+	assert.Equal(t, ntlmssp.GetNtlmHash("guest"), a.hash)
 }
 
 func TestEnvVarInvalid(t *testing.T) {

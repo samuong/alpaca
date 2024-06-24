@@ -15,6 +15,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/samuong/go-ntlmssp"
 	"golang.org/x/term"
 )
 
@@ -57,7 +59,11 @@ func (t *terminal) getCredentials() (*authenticator, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error reading password from stdin: %w", err)
 	}
-	return &authenticator{domain: t.domain, username: t.username, hash: getNtlmHash(buf)}, nil
+	return &authenticator{
+		domain:   t.domain,
+		username: t.username,
+		hash:     ntlmssp.GetNtlmHash(string(buf)),
+	}, nil
 }
 
 type envVar struct {
@@ -76,7 +82,10 @@ func (e *envVar) getCredentials() (*authenticator, error) {
 	}
 	domain := e.value[at+1 : colon]
 	username := e.value[0:at]
-	hash := e.value[colon+1:]
+	hash, err := hex.DecodeString(e.value[colon+1:])
+	if err != nil {
+		return nil, fmt.Errorf("invalid hash, please run `alpaca -H`: %w", err)
+	}
 	log.Printf("Found credentials for %s\\%s in environment", domain, username)
 	return &authenticator{domain, username, hash}, nil
 }
