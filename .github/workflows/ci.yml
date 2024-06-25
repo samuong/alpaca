@@ -95,3 +95,8 @@ jobs:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpaca-${{ matrix.target.goos }}-${{ matrix.target.goarch }}
+          path: alpaca
