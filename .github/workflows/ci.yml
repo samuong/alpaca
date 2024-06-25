@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - uses: actions/setup-go@v1
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
 
@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - uses: actions/setup-go@v1
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
 
@@ -75,15 +75,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - uses: actions/setup-go@v1
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
-
-      # xcode required until github macos runner is 11.x based
-      - uses: maxim-lobanov/setup-xcode@v1
-        if: matrix.target.goos == 'darwin' && matrix.target.goarch == 'arm64'
-        with:
-          xcode-version: latest
 
       - if: matrix.target.goos == 'darwin' && matrix.target.goarch == 'arm64'
         run: |
@@ -95,3 +89,8 @@ jobs:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpaca-${{ matrix.target.goos }}-${{ matrix.target.goarch }}
+          path: alpaca
