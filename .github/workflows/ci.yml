@@ -56,16 +56,16 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - os: 'macos-latest'
+          - os: 'macos-13-large'
             goos: 'darwin'
             goarch: 'amd64'
-          - os: 'macos-latest'
+          - os: 'macos-13-xlarge'
             goos: 'darwin'
             goarch: 'arm64'
-          - os: 'ubuntu-latest'
+          - os: 'ubuntu-20.04'
             goos: 'linux'
             goarch: 'amd64'
-          - os: 'windows-latest'
+          - os: 'windows-2019'
             goos: 'windows'
             goarch: 'amd64'
         go: [ '1.22' ]
