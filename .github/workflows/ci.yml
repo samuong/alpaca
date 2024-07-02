@@ -56,10 +56,10 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - os: 'macos-14-large'
+          - os: 'macos-13'
             goos: 'darwin'
             goarch: 'amd64'
-          - os: 'macos-14-xlarge'
+          - os: 'macos-13'
             goos: 'darwin'
             goarch: 'arm64'
           - os: 'ubuntu-20.04'
