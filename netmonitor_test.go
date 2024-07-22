@@ -16,14 +16,33 @@ package main
 
 import (
 	"errors"
-	"fmt"
+	"math/rand/v2"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
+
+// In order to test netMonitor, we use mock implementations of the
+// net.InterfaceAddrs() and net.Dial() functions, as well as the net.Addr and
+// net.Conn types. The mocks below will implement just enough functionality to
+// allow the tests to run, and will panic if unimplemented functions are
+// called. We simulate three network states: "offline", "wifi" and "vpn".
+//
+// In "offline" mode, only the loopback addresses exist, and attempts to dial
+// anywhere will result in a "network is unreachable" error.
+//
+// In "wifi" mode, in addition to the loopback addresses, we've also got an IP
+// address in the 192.168.1.0/24 range, which is meant to look like a home wifi
+// router, and we simulate a routing table that routes everything through this
+// interface.
+//
+// In "vpn" mode, we've got the same IP addresses as in "wifi" mode, and any
+// connection attempts will be routed via an address in the 10.0.0.0/8 range
+// (this is meant to look like a private corporate network). Note that our
+// 10.0.0.0/8 address does *not* appear in the output of net.InterfaceAddrs()
+// because apparently some VPN clients behave like this.
 
 type mockAddr string
 
@@ -82,19 +101,19 @@ func (c mockConn) Write(b []byte) (n int, err error) {
 }
 
 type mockNet struct {
-	connectedTo string
+	state string
 }
 
 func (n *mockNet) interfaceAddrs() ([]net.Addr, error) {
 	var addrs []net.Addr
-	switch n.connectedTo {
+	switch n.state {
 	case "vpn", "wifi":
 		addrs = append(addrs, toAddrs("192.168.1.2/24", "fe80::fedc:ba98:7654:3210/64")...)
 		fallthrough
 	case "offline":
 		addrs = append(addrs, toAddrs("127.0.0.1/8", "::1/128")...)
 	default:
-		panic("interfaceAddrs connectedTo=" + n.connectedTo)
+		panic("interfaceAddrs state=" + n.state)
 	}
 	return addrs, nil
 }
@@ -112,68 +131,58 @@ func (n *mockNet) dial(network, address string) (net.Conn, error) {
 		panic("dial host=" + host)
 	}
 	if ipv4 := ip.To4(); ipv4 == nil {
-		return nil, &net.OpError{
-			Op:     "dial",
-			Net:    network,
-			Source: nil,
-			Addr:   mockAddr(address),
-			Err:    errors.New("connect: no route to host"),
-		}
+		// Pretend we can't route to any IPv6 addresses.
+		return nil, newDialError(network, address, "connect: no route to host")
 	}
-	switch n.connectedTo {
+	switch n.state {
 	case "vpn":
-		return mockConn{localAddr: &net.UDPAddr{IP: net.IPv4(10, 0, 0, 3)}}, nil
+		// Pretend we're routing through a corporate VPN.
+		return newMockConn(10, 0, 0, 3), nil
 	case "wifi":
-		return mockConn{localAddr: &net.UDPAddr{IP: net.IPv4(192, 168, 1, 2)}}, nil
+		// Pretend we're routing through a home WiFi router.
+		return newMockConn(192, 168, 1, 2), nil
 	case "offline":
-		return nil, &net.OpError{
-			Op:     "dial",
-			Net:    network,
-			Source: nil,
-			Addr:   mockAddr(address),
-			Err:    errors.New("connect: network is unreachable"),
-		}
+		// Pretend we can't route to anywhere.
+		return nil, newDialError(network, address, "connect: network is unreachable")
 	default:
-		panic("dial connectedTo=" + n.connectedTo)
+		panic("dial state=" + n.state)
+	}
+}
+
+func newMockConn(a, b, c, d byte) mockConn {
+	// Pretend that the operating system has assigned a random port (in the
+	// range 1024 to 65535) on the outbound connection. This allows us to
+	// test that Alpaca doesn't think the routing table has changed just
+	// because the port is different on each call to net.Dial(); we only
+	// need to consider the outgoing IP address without the port number.
+	return mockConn{
+		localAddr: &net.UDPAddr{
+			IP:   net.IPv4(a, b, c, d),
+			Port: rand.IntN(65535-1024) + 1024,
+		},
+	}
+}
+
+func newDialError(network, address, text string) *net.OpError {
+	return &net.OpError{
+		Op:     "dial",
+		Net:    network,
+		Source: nil,
+		Addr:   mockAddr(address),
+		Err:    errors.New(text),
 	}
 }
 
 func TestNetworkMonitor(t *testing.T) {
 	var network mockNet
 	nm := &netMonitorImpl{getAddrs: network.interfaceAddrs, dial: network.dial}
-	network.connectedTo = "offline"
+	network.state = "offline"
 	assert.True(t, nm.addrsChanged())
-	network.connectedTo = "wifi"
+	network.state = "wifi"
 	assert.True(t, nm.addrsChanged())
 	assert.False(t, nm.addrsChanged())
-	network.connectedTo = "vpn"
-	fmt.Println(`network.connectedTo = "vpn"`)
+	network.state = "vpn"
 	assert.True(t, nm.addrsChanged())
-	fmt.Println(`network.connectedTo = "offline"`)
-	network.connectedTo = "offline"
+	network.state = "offline"
 	assert.True(t, nm.addrsChanged())
-}
-
-func TestDumpAddrs(t *testing.T) {
-	ifaces, err := net.Interfaces()
-	require.NoError(t, err)
-	t.Log("---------- INTERFACES AND ADDRESSES: ----------")
-	for _, iface := range ifaces {
-		addrs, err := iface.Addrs()
-		require.NoError(t, err)
-		t.Logf("%s -> %q", iface.Name, addrs)
-	}
-	remotes := []string{
-		"8.8.8.8", "2001:4860:4860::8888", // public addresses
-		"10.0.0.0", "172.16.0.0", "192.168.0.0", "FC00::", // private addresses
-	}
-	t.Log("---------- ROUTES: ----------")
-	for _, addr := range remotes {
-		conn, err := net.Dial("udp", net.JoinHostPort(addr, "80"))
-		if err != nil {
-			t.Logf("%q => error: %v\n", addr, err)
-			continue
-		}
-		t.Logf("%q => %q\n", addr, conn.LocalAddr().String())
-	}
 }
