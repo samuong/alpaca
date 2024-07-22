@@ -17,6 +17,7 @@ package main
 import (
 	"log"
 	"net"
+	"slices"
 )
 
 type netMonitor interface {
@@ -25,7 +26,7 @@ type netMonitor interface {
 
 type netMonitorImpl struct {
 	addrs    map[string]struct{}
-	routes   map[string]net.IP
+	routes   []net.IP
 	getAddrs func() ([]net.Addr, error)
 	dial     func(network, addr string) (net.Conn, error)
 }
@@ -41,31 +42,23 @@ func (nm *netMonitorImpl) addrsChanged() bool {
 		return false
 	}
 	set := addrSliceToSet(addrs)
-
 	// Probe for routes to a set of remote addresses. These addresses are
 	// the same as those used by myIpAddressEx.
 	// TODO: Cache the results so they don't need to be recalculated in
-	// myIpAddress and myIpAddressEx.
+	// myIpAddress (and myIpAddressEx, when implemented).
 	remotes := []string{
 		"8.8.8.8", "2001:4860:4860::8888", // public addresses
 		"10.0.0.0", "172.16.0.0", "192.168.0.0", "FC00::", // private addresses
 	}
-	routes := map[string]net.IP{}
-	routesChanged := false
-	for _, remote := range remotes {
-		local := nm.probeRoute(remote, false)
-		routes[remote] = local
-		was, ok := nm.routes[remote]
-		if nm.routes == nil || !ok || !was.Equal(local) {
-			routesChanged = true
-		}
+	locals := make([]net.IP, len(remotes))
+	for i, remote := range remotes {
+		locals[i] = nm.probeRoute(remote, false)
 	}
-
-	if setsAreEqual(set, nm.addrs) && !routesChanged {
+	if setsAreEqual(set, nm.addrs) && slices.EqualFunc(locals, nm.routes, net.IP.Equal) {
 		return false
 	}
 	nm.addrs = set
-	nm.routes = routes
+	nm.routes = locals
 	return true
 }
 
