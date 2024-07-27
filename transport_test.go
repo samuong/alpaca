@@ -1,4 +1,4 @@
-// Copyright 2021, 2022 The Alpaca Authors
+// Copyright 2021, 2022, 2024 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@ package main
 import (
 	"bufio"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,8 +33,10 @@ func TestTransport(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(handler))
 	defer server.Close()
+	conn, err := net.Dial("tcp", server.Listener.Addr().String())
+	require.NoError(t, err)
 	var tr transport
-	require.NoError(t, tr.dial(&url.URL{Host: server.Listener.Addr().String()}))
+	tr.swap(conn)
 	defer tr.Close()
 	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
 	require.NoError(t, err)
@@ -50,7 +52,7 @@ func TestTransport(t *testing.T) {
 	})
 
 	t.Run("Hijack", func(t *testing.T) {
-		conn := tr.hijack()
+		conn := tr.release()
 		defer conn.Close()
 		require.NoError(t, req.Write(conn))
 		resp, err := http.ReadResponse(bufio.NewReader(conn), req)

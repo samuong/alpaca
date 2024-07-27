@@ -1,4 +1,4 @@
-// Copyright 2021 The Alpaca Authors
+// Copyright 2021, 2024 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,38 +16,24 @@ package main
 
 import (
 	"bufio"
-	"crypto/tls"
 	"errors"
 	"net"
 	"net/http"
-	"net/url"
 )
 
-// transport creates and manages the lifetime of a net.Conn. Between the time that a remote server
-// is dialled, and the connection hijacked or closed, a client can send HTTP requests using the
-// RoundTrip method (rather than writing requests and reading responses on the net.Conn).
+// transport takes ownership of a net.Conn and allows it to be used as an
+// http.RoundTripper (rather than writing requests and reading responses
+// directly on the net.Conn).
 type transport struct {
 	conn   net.Conn
 	reader *bufio.Reader
 }
 
-func (t *transport) dial(proxy *url.URL) error {
-	if err := t.Close(); err != nil {
-		return err
-	}
-	var conn net.Conn
-	var err error
-	if proxy.Scheme == "https" {
-		conn, err = tls.Dial("tcp", proxy.Host, tlsClientConfig)
-	} else {
-		conn, err = net.Dial("tcp", proxy.Host)
-	}
-	if err != nil {
-		return &net.OpError{Op: "proxyconnect", Net: "tcp", Err: err}
-	}
-	t.conn = conn
-	t.reader = bufio.NewReader(conn)
-	return nil
+func (t *transport) swap(next net.Conn) net.Conn {
+	prev := t.conn
+	t.conn = next
+	t.reader = bufio.NewReader(next)
+	return prev
 }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -60,7 +46,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.ReadResponse(t.reader, req)
 }
 
-func (t *transport) hijack() net.Conn {
+func (t *transport) release() net.Conn {
 	defer func() {
 		t.conn = nil
 		t.reader = nil

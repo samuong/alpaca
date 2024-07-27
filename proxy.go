@@ -16,6 +16,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -25,11 +26,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 var tlsClientConfig *tls.Config
 
 type ProxyHandler struct {
+	dialer    *net.Dialer
 	transport *http.Transport
 	auth      *authenticator
 	block     func(string)
@@ -38,8 +41,17 @@ type ProxyHandler struct {
 type proxyFunc func(*http.Request) (*url.URL, error)
 
 func NewProxyHandler(auth *authenticator, proxy proxyFunc, block func(string)) ProxyHandler {
-	tr := &http.Transport{Proxy: proxy, TLSClientConfig: tlsClientConfig}
-	return ProxyHandler{tr, auth, block}
+	d := &net.Dialer{
+		// Same as <https://pkg.go.dev/net/http#DefaultTransport>.
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	tr := &http.Transport{
+		Proxy:           proxy,
+		DialContext:     d.DialContext,
+		TLSClientConfig: tlsClientConfig,
+	}
+	return ProxyHandler{dialer: d, transport: tr, auth: auth, block: block}
 }
 
 func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
@@ -77,9 +89,9 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	}
 	var server net.Conn
 	if proxy == nil {
-		server, err = connectDirect(req)
+		server, err = ph.connectDirect(req)
 	} else {
-		server, err = connectViaProxy(req, proxy, ph.auth)
+		server, err = ph.connectViaProxy(req, proxy)
 		var oe *net.OpError
 		if errors.As(err, &oe) && oe.Op == "proxyconnect" {
 			log.Printf("[%d] Temporarily blocking proxy: %q", id, proxy.Host)
@@ -135,35 +147,41 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	go func() { _, _ = io.Copy(client, server); client.Close() }()
 }
 
-func connectDirect(req *http.Request) (net.Conn, error) {
-	server, err := net.Dial("tcp", req.Host)
+func (ph ProxyHandler) connectDirect(req *http.Request) (net.Conn, error) {
+	ctx := req.Context()
+	server, err := ph.dialer.DialContext(ctx, "tcp", req.Host)
 	if err != nil {
-		id := req.Context().Value(contextKeyID)
+		id := ctx.Value(contextKeyID)
 		log.Printf("[%d] Error dialling host %s: %v", id, req.Host, err)
 	}
 	return server, err
 }
 
-func connectViaProxy(req *http.Request, proxy *url.URL, auth *authenticator) (net.Conn, error) {
-	id := req.Context().Value(contextKeyID)
-	var tr transport
-	defer tr.Close()
-	if err := tr.dial(proxy); err != nil {
+func (ph ProxyHandler) connectViaProxy(req *http.Request, proxy *url.URL) (net.Conn, error) {
+	ctx := req.Context()
+	id := ctx.Value(contextKeyID)
+	conn, err := ph.dialProxy(ctx, proxy)
+	if err != nil {
 		log.Printf("[%d] Error dialling proxy %s: %v", id, proxy.Host, err)
 		return nil, err
 	}
+	var tr transport
+	defer tr.Close()
+	tr.swap(conn)
 	resp, err := tr.RoundTrip(req)
 	if err != nil {
 		log.Printf("[%d] Error reading CONNECT response: %v", id, err)
 		return nil, err
-	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
+	} else if resp.StatusCode == http.StatusProxyAuthRequired && ph.auth != nil {
 		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
 		resp.Body.Close()
-		if err := tr.dial(proxy); err != nil {
+		conn, err := ph.dialProxy(ctx, proxy)
+		if err != nil {
 			log.Printf("[%d] Error re-dialling %s: %v", id, proxy.Host, err)
 			return nil, err
 		}
-		resp, err = auth.do(req, &tr)
+		tr.swap(conn).Close()
+		resp, err = ph.auth.do(req, &tr)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +190,24 @@ func connectViaProxy(req *http.Request, proxy *url.URL, auth *authenticator) (ne
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("[%d] Unexpected response status: %s", id, resp.Status)
 	}
-	return tr.hijack(), nil
+	return tr.release(), nil
+}
+
+func (ph ProxyHandler) dialProxy(ctx context.Context, proxy *url.URL) (net.Conn, error) {
+	var conn net.Conn
+	var err error
+	if proxy.Scheme == "https" {
+		config := ph.transport.TLSClientConfig
+		conn, err = tls.DialWithDialer(ph.dialer, "tcp", proxy.Host, config)
+	} else {
+		conn, err = ph.dialer.DialContext(ctx, "tcp", proxy.Host)
+	}
+	if err != nil {
+		// Wrap this in a "proxyconnect" error so that we can determine
+		// whether to (temporarily) block attempts to use this proxy.
+		return nil, &net.OpError{Op: "proxyconnect", Net: "tcp", Err: err}
+	}
+	return conn, nil
 }
 
 func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
