@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -32,7 +33,6 @@ import (
 var tlsClientConfig *tls.Config
 
 type ProxyHandler struct {
-	dialer    *net.Dialer
 	transport *http.Transport
 	auth      *authenticator
 	block     func(string)
@@ -50,8 +50,14 @@ func NewProxyHandler(auth *authenticator, proxy proxyFunc, block func(string)) P
 		Proxy:           proxy,
 		DialContext:     d.DialContext,
 		TLSClientConfig: tlsClientConfig,
+		// Same as <https://pkg.go.dev/net/http#DefaultTransport>.
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
 	}
-	return ProxyHandler{dialer: d, transport: tr, auth: auth, block: block}
+	return ProxyHandler{tr, auth, block}
 }
 
 func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
@@ -149,7 +155,7 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 
 func (ph ProxyHandler) connectDirect(req *http.Request) (net.Conn, error) {
 	ctx := req.Context()
-	server, err := ph.dialer.DialContext(ctx, "tcp", req.Host)
+	server, err := ph.transport.DialContext(ctx, "tcp", req.Host)
 	if err != nil {
 		id := ctx.Value(contextKeyID)
 		log.Printf("[%d] Error dialling host %s: %v", id, req.Host, err)
@@ -194,18 +200,19 @@ func (ph ProxyHandler) connectViaProxy(req *http.Request, proxy *url.URL) (net.C
 }
 
 func (ph ProxyHandler) dialProxy(ctx context.Context, proxy *url.URL) (net.Conn, error) {
-	var conn net.Conn
-	var err error
-	if proxy.Scheme == "https" {
-		config := ph.transport.TLSClientConfig
-		conn, err = tls.DialWithDialer(ph.dialer, "tcp", proxy.Host, config)
-	} else {
-		conn, err = ph.dialer.DialContext(ctx, "tcp", proxy.Host)
-	}
+	conn, err := ph.transport.DialContext(ctx, "tcp", proxy.Host)
 	if err != nil {
 		// Wrap this in a "proxyconnect" error so that we can determine
 		// whether to (temporarily) block attempts to use this proxy.
 		return nil, &net.OpError{Op: "proxyconnect", Net: "tcp", Err: err}
+	}
+	if proxy.Scheme == "https" {
+		client := tls.Client(conn, ph.transport.TLSClientConfig)
+		if err := client.HandshakeContext(ctx); err != nil {
+			client.Close()
+			return nil, err
+		}
+		return client.NetConn(), nil
 	}
 	return conn, nil
 }
