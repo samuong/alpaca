@@ -28,6 +28,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/gobwas/glob"
 )
 
 var tlsClientConfig *tls.Config
@@ -39,6 +41,40 @@ type ProxyHandler struct {
 }
 
 type proxyFunc func(*http.Request) (*url.URL, error)
+type dialFunc func(context.Context, string, string) (net.Conn, error)
+
+func wrapDialFunc(dial dialFunc, hosts string) (dialFunc, error) {
+	entries := strings.Split(hosts, ",")
+	patterns := make([]glob.Glob, len(entries))
+	aliases := make([]string, len(entries))
+	for i, entry := range entries {
+		pattern, alias, ok := strings.Cut(entry, "=")
+		if !ok {
+			return nil, fmt.Errorf("wrapDialFunc: invalid entry i=%d %q", i, entry)
+		}
+		g, err := glob.Compile(pattern, '.')
+		if err != nil {
+			return nil, fmt.Errorf("wrapDialFunc: invalid pattern %q", pattern)
+		}
+		patterns[i] = g
+		aliases[i] = alias
+	}
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		log.Printf("using a special dialer")
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		for i, pattern := range patterns {
+			if pattern.Match(host) {
+				log.Printf("matched pattern %d, using %s instead", i, aliases[i])
+				return dial(ctx, network, net.JoinHostPort(aliases[i], port))
+			}
+		}
+		log.Printf("%s didn't match any pattern ", host)
+		return dial(ctx, network, address)
+	}, nil
+}
 
 func NewProxyHandler(auth *authenticator, proxy proxyFunc, block func(string)) ProxyHandler {
 	d := &net.Dialer{
@@ -56,6 +92,15 @@ func NewProxyHandler(auth *authenticator, proxy proxyFunc, block func(string)) P
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+	}
+	if hosts, ok := os.LookupEnv("ALPACA_HOSTS"); ok {
+		log.Printf("found ALPACA_HOSTS, using a wrapped dialer")
+		dial, err := wrapDialFunc(d.DialContext, hosts)
+		if err != nil {
+			// TODO: do something
+			panic(err)
+		}
+		tr.DialContext = dial
 	}
 	return ProxyHandler{tr, auth, block}
 }
