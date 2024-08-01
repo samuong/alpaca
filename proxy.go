@@ -167,6 +167,7 @@ func connectViaProxy(req *http.Request, proxy *url.URL, auth *authenticator) (ne
 		if err != nil {
 			return nil, err
 		}
+		log.Printf("[%d] Got %q response", id, resp.Status)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -218,6 +219,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 				return
 			}
 		}
+		log.Printf("[%d] Got %q response", id, resp.Status)
 	}
 	defer resp.Body.Close()
 	copyResponseHeaders(w, resp)
