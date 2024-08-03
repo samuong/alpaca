@@ -84,7 +84,7 @@ jobs:
           echo SDKROOT=$(xcrun --sdk macosx --show-sdk-path) >> $GITHUB_ENV
 
       - run: |
-          go build -v .
+          go build -ldflags="-X main.BuildVersion=$(git describe --tags)" -v .
         env:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
