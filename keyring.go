@@ -1,4 +1,4 @@
-// Copyright 2021 The Alpaca Authors
+// Copyright 2019, 2020, 2021 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,22 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !darwin
+//go:build linux
+// +build linux
 
 package main
 
 import (
-	"errors"
-)
+	"fmt"
 
-const keyringSupported = false
+	"github.com/samuong/go-ntlmssp"
+	ring "github.com/zalando/go-keyring"
+)
 
 type keyring struct{}
 
 func fromKeyring() *keyring {
-	return nil
+	return &keyring{}
 }
 
 func (k *keyring) getCredentials() (*authenticator, error) {
-	return nil, errors.New("not yet implemented")
+	pwd, err := ring.Get("alpaca", username)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get user secret from keyring: %w", err)
+	}
+	hash := ntlmssp.GetNtlmHash(pwd)
+	return &authenticator{domain, username, hash}, nil
 }

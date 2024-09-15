@@ -26,7 +26,11 @@ import (
 	"strconv"
 )
 
-var BuildVersion string
+var (
+	BuildVersion string
+	username     string
+	domain       string
+)
 
 func whoAmI() string {
 	me, err := user.Current()
@@ -38,12 +42,14 @@ func whoAmI() string {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+	flag.StringVar(&domain, "d", "", "domain of the proxy account (for NTLM auth)")
+	flag.StringVar(&username, "u", whoAmI(), "username of the proxy account (for NTLM auth)")
 	host := flag.String("l", "localhost", "address to listen on")
 	port := flag.Int("p", 3128, "port number to listen on")
 	pacurl := flag.String("C", "", "url of proxy auto-config (pac) file")
-	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
-	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
+	interactive := flag.Bool("i", false, "type manually the password")
+	readFromKeyring := flag.Bool("k", false, "read password from system keyring")
 	version := flag.Bool("version", false, "print version number")
 	flag.Parse()
 
@@ -53,25 +59,29 @@ func main() {
 	}
 
 	var src credentialSource
-	if *domain != "" {
-		src = fromTerminal().forUser(*domain, *username)
+	if *interactive {
+		src = fromTerminal().forUser(domain, username)
 	} else if value := os.Getenv("NTLM_CREDENTIALS"); value != "" {
 		src = fromEnvVar(value)
-	} else if keyringSupported {
+	} else if *readFromKeyring {
 		src = fromKeyring()
+	} else {
+		log.Printf("No credentials source defined, disabling proxy auth")
 	}
+
 	var a *authenticator
 	if src != nil {
 		var err error
 		a, err = src.getCredentials()
 		if err != nil {
-			log.Printf("Credentials not found, disabling proxy auth: %v", err)
+			log.Printf("Credentials not found: %v", err)
+			os.Exit(1)
 		}
 	}
 
 	if *printHash {
 		if a == nil {
-			fmt.Println("Please specify a domain (using -d) and username (using -u)")
+			fmt.Println("Please specify a credentials source: -k or -i")
 			os.Exit(1)
 		}
 		fmt.Printf("# Add this to your ~/.profile (or equivalent) and restart your shell\n")

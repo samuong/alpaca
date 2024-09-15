@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build darwin
+// +build darwin
+
 package main
 
 import (
@@ -24,8 +27,6 @@ import (
 	"github.com/keybase/go-keychain"
 	"github.com/samuong/go-ntlmssp"
 )
-
-const keyringSupported = true
 
 type keyring struct {
 	execCommand func(name string, arg ...string) *exec.Cmd
