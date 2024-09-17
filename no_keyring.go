@@ -12,16 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux || windows
-// +build linux windows
+//go:build !linux && !windows && !darwin
 
 package main
 
 import (
 	"fmt"
-
-	"github.com/samuong/go-ntlmssp"
-	ring "github.com/zalando/go-keyring"
+	"runtime"
 )
 
 type keyring struct{}
@@ -31,10 +28,5 @@ func fromKeyring() *keyring {
 }
 
 func (k *keyring) getCredentials() (*authenticator, error) {
-	pwd, err := ring.Get("alpaca", username)
-	if err != nil {
-		return nil, fmt.Errorf("cannot get user secret from keyring: %w", err)
-	}
-	hash := ntlmssp.GetNtlmHash(pwd)
-	return &authenticator{domain, username, hash}, nil
+	return nil, fmt.Errorf("no keyring interface for: %s", runtime.GOOS)
 }

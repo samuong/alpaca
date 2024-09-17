@@ -49,7 +49,6 @@ func main() {
 	pacurl := flag.String("C", "", "url of proxy auto-config (pac) file")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
 	interactive := flag.Bool("i", false, "type manually the password")
-	readFromKeyring := flag.Bool("k", false, "read password from system keyring")
 	version := flag.Bool("version", false, "print version number")
 	flag.Parse()
 
@@ -63,10 +62,8 @@ func main() {
 		src = fromTerminal().forUser(domain, username)
 	} else if value := os.Getenv("NTLM_CREDENTIALS"); value != "" {
 		src = fromEnvVar(value)
-	} else if *readFromKeyring {
-		src = fromKeyring()
 	} else {
-		log.Printf("No credentials source defined, disabling proxy auth")
+		src = fromKeyring()
 	}
 
 	var a *authenticator
@@ -74,15 +71,13 @@ func main() {
 		var err error
 		a, err = src.getCredentials()
 		if err != nil {
-			log.Printf("Credentials not found: %v", err)
-			os.Exit(1)
+			log.Printf("Credentials not found, disabling proxy auth: %v", err)
 		}
 	}
 
 	if *printHash {
 		if a == nil {
-			fmt.Println("Please specify a credentials source: -k or -i")
-			os.Exit(1)
+			fmt.Println("Please specify a domain (using -d) and username (using -u) in interactive mode (using -i)")
 		}
 		fmt.Printf("# Add this to your ~/.profile (or equivalent) and restart your shell\n")
 		fmt.Printf("NTLM_CREDENTIALS=%q; export NTLM_CREDENTIALS\n", a)

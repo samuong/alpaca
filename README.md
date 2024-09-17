@@ -40,33 +40,11 @@ Start Alpaca by running the `alpaca` binary.
 
 If the proxy server requires valid authentication credentials, you can provide them by means of:
 
-- the system keyring (macOS, Windows and Linux/GNOME supported), if `-k` is passed
 - the shell prompt, if `-i` is passed
-- the shell environment, if `NTLM_CREDENTIALS` is set in the env.
+- the shell environment, if `NTLM_CREDENTIALS` is set in the env,
+- the system keyring (macOS, Windows and Linux/GNOME supported), if none of the above applies.
 
 Otherwise, the authentication with proxy will be simply ignored.
-
-### Keyring
-
-On macOS and Linux/GNOME systems, Alpaca uses the PAC URL from your system settings.
-If you'd like to override this, or if Alpaca fails to detect your settings, you
-can set this manually using the `-C` flag.
-
-On macOS, if you use [NoMAD](https://nomad.menu/products/#nomad) and have configured it
-to [use the keychain](https://nomad.menu/help/keychain-usage/), Alpaca will use
-these credentials to authenticate to any NTLM challenge from your proxies.
-
-On Windows and Linux, Alpaca will read the password from the system keyring (in the `login` collection) using the attributes
-`service=alpaca` and `username=$USERNAME`, where username is your login username or the one
-you will pass to Alpaca with the `-u` flag.
-To store the password on GNOME keyring, do the following:
-```bash
-$ sudo apt install libsecret-tools
-$ secret-tool store -c login -l "NTLM credentials" "service" "alpaca" "username" "your-username-here"
-Password:
-# Type your password
-$ alpaca -d MYDOMAIN -u me -k
-```
 
 ### Shell Prompt
 
@@ -86,7 +64,7 @@ environment variable called `$NTLM_CREDENTIALS`. You can use the `-H` flag to
 generate this value:
 
 ```sh
-$ ./alpaca -d MYDOMAIN -u me -H [-i | -k]
+$ ./alpaca -d MYDOMAIN -u me -H -i 
 # Add this to your ~/.profile (or equivalent) and restart your shell
 NTLM_CREDENTIALS="me@MYDOMAIN:823893adfad2cda6e1a414f3ebdf58f7"; export NTLM_CREDENTIALS
 ```
@@ -96,6 +74,28 @@ people from being able to read your password with a quick glance.
 
 Once you've set this environment variable, you can start Alpaca by running
 `./alpaca`.
+
+### Keyring
+
+On macOS and Linux/GNOME systems, Alpaca uses the PAC URL from your system settings.
+If you'd like to override this, or if Alpaca fails to detect your settings, you
+can set this manually using the `-C` flag.
+
+On macOS, if you use [NoMAD](https://nomad.menu/products/#nomad) and have configured it
+to [use the keychain](https://nomad.menu/help/keychain-usage/), Alpaca will use
+these credentials to authenticate to any NTLM challenge from your proxies.
+
+On Windows and Linux, Alpaca will read the password from the system keyring (in the `login` collection) using the attributes
+`service=alpaca` and `username=$USERNAME`, where username is your login username or the one
+you will pass to Alpaca with the `-u` flag.
+To store the password in the GNOME keyring, do the following:
+```bash
+$ sudo apt install libsecret-tools
+$ secret-tool store -c login -l "NTLM credentials" "service" "alpaca" "username" "your-username-here"
+Password:
+# Type your password, then run
+$ alpaca -d MYDOMAIN -u me
+```
 
 ---
 
