@@ -72,7 +72,8 @@ func main() {
 
 	if *printHash {
 		if a == nil {
-			fmt.Println("Please specify a domain (using -d) and username (using -u) in interactive mode (using -i)")
+			fmt.Println("Please specify a domain (using -d) and username (using -u)")
+			os.Exit(1)
 		}
 		fmt.Printf("# Add this to your ~/.profile (or equivalent) and restart your shell\n")
 		fmt.Printf("NTLM_CREDENTIALS=%q; export NTLM_CREDENTIALS\n", a)
