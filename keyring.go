@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/samuong/go-ntlmssp"
 	ring "github.com/zalando/go-keyring"
@@ -30,6 +31,12 @@ func fromKeyring() *keyring {
 }
 
 func (k *keyring) getCredentials() (*authenticator, error) {
+
+	var (
+		username = os.Getenv("NTLM_USERNAME")
+		domain   = os.Getenv("NTLM_DOMAIN")
+	)
+
 	pwd, err := ring.Get("alpaca", username)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get user secret from keyring: %w", err)

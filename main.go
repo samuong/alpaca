@@ -26,11 +26,7 @@ import (
 	"strconv"
 )
 
-var (
-	BuildVersion string
-	username     string
-	domain       string
-)
+var BuildVersion string
 
 func whoAmI() string {
 	me, err := user.Current()
@@ -42,13 +38,12 @@ func whoAmI() string {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
-	flag.StringVar(&domain, "d", "", "domain of the proxy account (for NTLM auth)")
-	flag.StringVar(&username, "u", whoAmI(), "username of the proxy account (for NTLM auth)")
 	host := flag.String("l", "localhost", "address to listen on")
 	port := flag.Int("p", 3128, "port number to listen on")
 	pacurl := flag.String("C", "", "url of proxy auto-config (pac) file")
+	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
+	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
-	interactive := flag.Bool("i", false, "type manually the password")
 	version := flag.Bool("version", false, "print version number")
 	flag.Parse()
 
@@ -58,8 +53,8 @@ func main() {
 	}
 
 	var src credentialSource
-	if *interactive {
-		src = fromTerminal().forUser(domain, username)
+	if *domain != "" {
+		src = fromTerminal().forUser(*domain, *username)
 	} else if value := os.Getenv("NTLM_CREDENTIALS"); value != "" {
 		src = fromEnvVar(value)
 	} else {
