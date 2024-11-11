@@ -57,9 +57,10 @@ func main() {
 		src = fromTerminal().forUser(*domain, *username)
 	} else if value := os.Getenv("NTLM_CREDENTIALS"); value != "" {
 		src = fromEnvVar(value)
-	} else if keyringSupported {
+	} else {
 		src = fromKeyring()
 	}
+
 	var a *authenticator
 	if src != nil {
 		var err error

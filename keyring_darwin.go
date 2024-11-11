@@ -25,8 +25,6 @@ import (
 	"github.com/samuong/go-ntlmssp"
 )
 
-const keyringSupported = true
-
 type keyring struct {
 	execCommand func(name string, arg ...string) *exec.Cmd
 }
