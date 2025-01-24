@@ -41,7 +41,7 @@ jobs:
           - os: 'ubuntu-20.04'
             goos: 'linux'
             goarch: 'amd64'
-          - os: 'ubuntu-20.04'
+          - os: 'ubuntu-22.04-arm'
             goos: 'linux'
             goarch: 'arm64'
           - os: 'windows-2019'
