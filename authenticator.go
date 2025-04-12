@@ -1,4 +1,4 @@
-// Copyright 2019, 2021, 2024 The Alpaca Authors
+// Copyright 2019, 2021, 2024, 2025 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/samuong/go-ntlmssp"
+	"github.com/bodgit/ntlmssp"
 )
 
 type authenticator struct {
@@ -34,7 +34,16 @@ type authenticator struct {
 
 func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
 	hostname, _ := os.Hostname() // in case of error, just use the zero value ("") as hostname
-	negotiate, err := ntlmssp.NewNegotiateMessage(a.domain, hostname)
+	client, err := ntlmssp.NewClient(
+		ntlmssp.SetDomain(a.domain),
+		ntlmssp.SetUserInfo(a.username, "YOUR_PASSWORD_HERE"),
+		ntlmssp.SetWorkstation(hostname),
+	)
+	if err != nil {
+		log.Printf("Error creating NTLM client: %v", err)
+		return nil, err
+	}
+	negotiate, err := client.Authenticate(nil, nil)
 	if err != nil {
 		log.Printf("Error creating NTLM Type 1 (Negotiate) message: %v", err)
 		return nil, err
@@ -55,8 +64,7 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 		log.Printf("Error decoding NTLM Type 2 (Challenge) message: %v", err)
 		return nil, err
 	}
-	authenticate, err := ntlmssp.ProcessChallengeWithHash(
-		challenge, a.domain, a.username, a.hash)
+	authenticate, err := client.Authenticate(challenge, nil)
 	if err != nil {
 		log.Printf("Error processing NTLM Type 2 (Challenge) message: %v", err)
 		return nil, err

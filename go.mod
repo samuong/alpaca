@@ -5,6 +5,7 @@ go 1.22.3
 toolchain go1.22.4
 
 require (
+	github.com/bodgit/ntlmssp v0.0.0-20240506230425-31973bb52d9b
 	github.com/gobwas/glob v0.2.3
 	github.com/keybase/go-keychain v0.0.0-20231219164618-57a3676c3af6
 	github.com/robertkrimen/otto v0.4.0
@@ -16,6 +17,7 @@ require (
 
 require (
 	github.com/alessio/shellescape v1.4.1 // indirect
+	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/danieljoos/wincred v1.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
