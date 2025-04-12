@@ -36,7 +36,7 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 	hostname, _ := os.Hostname() // in case of error, just use the zero value ("") as hostname
 	client, err := ntlmssp.NewClient(
 		ntlmssp.SetDomain(a.domain),
-		ntlmssp.SetUserInfo(a.username, "YOUR_PASSWORD_HERE"),
+		ntlmssp.SetUserInfo(a.username, os.Getenv("ALPACA_PASSWORD")),
 		ntlmssp.SetWorkstation(hostname),
 	)
 	if err != nil {
