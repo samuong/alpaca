@@ -208,11 +208,12 @@ func myIpAddressEx(_ otto.FunctionCall) otto.Value {
 	}
 	if ips := resolveHostname(true); len(ips) > 0 {
 		var b strings.Builder
-		for _, ip := range ips {
+		b.WriteString(ips[0].String())
+		for _, ip := range ips[1:] {
 			b.WriteRune(';')
 			b.WriteString(ip.String())
 		}
-		return toValue(strings.TrimPrefix(b.String(), ";"))
+		return toValue(b.String())
 	}
 	private := []string{"10.0.0.0", "172.16.0.0", "192.168.0.0", "FC00::"}
 	ips := probeRoutes(private)
