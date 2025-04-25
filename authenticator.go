@@ -1,4 +1,4 @@
-// Copyright 2019, 2021, 2024 The Alpaca Authors
+// Copyright 2019, 2021, 2024, 2025 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ThomsonReutersEikon/go-ntlm/ntlm"
 	"github.com/samuong/go-ntlmssp"
 )
 
@@ -34,6 +35,10 @@ type authenticator struct {
 
 func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
 	hostname, _ := os.Hostname() // in case of error, just use the zero value ("") as hostname
+	// XXX: github.com/ThomsonReutersEikon/go-ntlm doesn't seem to have a
+	// way to generate a negotiate message (or even a hardcoded one in the
+	// library?). Use the one from github.com/Azure/go-ntlmssp, and hope
+	// that it works ¯\_(ツ)_/¯
 	negotiate, err := ntlmssp.NewNegotiateMessage(a.domain, hostname)
 	if err != nil {
 		log.Printf("Error creating NTLM Type 1 (Negotiate) message: %v", err)
@@ -49,20 +54,31 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 		return resp, nil
 	}
 	resp.Body.Close()
-	challenge, err := base64.StdEncoding.DecodeString(
+	challengeBytes, err := base64.StdEncoding.DecodeString(
 		strings.TrimPrefix(resp.Header.Get("Proxy-Authenticate"), "NTLM "))
 	if err != nil {
 		log.Printf("Error decoding NTLM Type 2 (Challenge) message: %v", err)
 		return nil, err
 	}
-	authenticate, err := ntlmssp.ProcessChallengeWithHash(
-		challenge, a.domain, a.username, a.hash)
+	challenge, err := ntlm.ParseChallengeMessage(challengeBytes)
+	if err != nil {
+		log.Printf("Error parsing NTLM Type 2 (Challenge) message: %v", err)
+		return nil, err
+	}
+	session, err := ntlm.CreateClientSession(ntlm.Version2, ntlm.ConnectionlessMode)
+	//session.SetUserInfo(a.username, os.Getenv("ALPACA_PASSWORD"), a.domain)
+	session.SetUserInfo(a.username, "guest", a.domain)
+	if err := session.ProcessChallengeMessage(challenge); err != nil {
+		log.Printf("Error processing NTLM Type 2 (Challenge) message: %v", err)
+		return nil, err
+	}
+	authenticate, err := session.GenerateAuthenticateMessage()
 	if err != nil {
 		log.Printf("Error processing NTLM Type 2 (Challenge) message: %v", err)
 		return nil, err
 	}
 	req.Header.Set("Proxy-Authorization",
-		"NTLM "+base64.StdEncoding.EncodeToString(authenticate))
+		"NTLM "+base64.StdEncoding.EncodeToString(authenticate.Bytes()))
 	return rt.RoundTrip(req)
 }
 
