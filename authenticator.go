@@ -66,6 +66,10 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 		return nil, err
 	}
 	session, err := ntlm.CreateClientSession(ntlm.Version2, ntlm.ConnectionlessMode)
+	if err != nil {
+		log.Printf("Error creating NTLM client session: %v", err)
+		return nil, err
+	}
 	session.SetUserInfo(a.username, os.Getenv("ALPACA_PASSWORD"), a.domain)
 	if err := session.ProcessChallengeMessage(challenge); err != nil {
 		log.Printf("Error processing NTLM Type 2 (Challenge) message: %v", err)
