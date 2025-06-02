@@ -1,127 +1,150 @@
-# Alpaca
+# Alpaca PAC Finder Darwin Fix Analysis
 
-![Latest Tag][2] ![GitHub Workflow Status][3] ![GitHub Releases][4]
+This document analyzes the changes made to the `pacfinder_darwin.go` file in the PR fix.
 
-Alpaca is a local HTTP proxy for command-line tools. It supports proxy
-auto-configuration (PAC) files and NTLM authentication.
+## Changes Between BeforePR and AfterPR Versions
 
-## Install using Homebrew
+### 1. Improved Error Handling and Logging
 
-If you're using macOS and use [Homebrew](https://brew.sh/), you can install
-using:
+**Before:**
+- Minimal error handling
+- No logging when SCDynamicStore creation fails
+- No validation of CFNumberGetValue return values
 
-```sh
-$ brew tap samuong/alpaca
-$ brew install samuong/alpaca/alpaca
+**After:**
+- Added proper error handling with log.Fatalf when SCDynamicStore creation fails
+- Added validation of CFNumberGetValue return values
+- Structured the code with better error handling throughout
+
+### 2. Added Redundant PAC URL Detection Methods
+
+**Before:**
+- Single method for PAC URL detection using SCDynamicStoreCopyValue
+
+**After:**
+- Two methods for PAC URL detection:
+  1. Original method using SCDynamicStoreCopyValue
+  2. New method using SCDynamicStoreCopyProxies
+- Fallback mechanism: if the first method fails, the second is tried
+
+### 3. Code Structure Improvements
+
+**Before:**
+- Single monolithic function for PAC URL detection
+- Limited comments and documentation
+
+**After:**
+- Split functionality into separate methods with clear responsibilities
+- Better function naming (getPACUrlFromSCDynamicStoreCopyValue, getPACUrlFromSCDynamicStoreCopyProxies)
+- Added commented logging statements (currently disabled) for debugging
+
+### 4. Added Helper Function
+
+**Before:**
+- No helper function for creating CFStringRef from Go strings
+
+**After:**
+- Added CFStringCreateWithCString helper function to create CFStringRef from Go strings
+- This improves code readability and maintainability
+
+### 5. Added Auto Flag to pacFinder struct
+
+**Before:**
+```go
+type pacFinder struct {
+    pacUrl   string
+    storeRef C.SCDynamicStoreRef
+}
 ```
 
-Launch Alpaca by running `alpaca`, or by using `brew services start alpaca`.
-
-## Install using Go
-
-If you've got the [Go](https://golang.org/cmd/go/) tool installed, you can
-install using:
-
-```sh
-$ go install github.com/samuong/alpaca/v2@latest
+**After:**
+```go
+type pacFinder struct {
+    pacUrl   string
+    storeRef C.SCDynamicStoreRef
+    auto     bool
+}
 ```
 
-## Download Binary
+The `auto` flag indicates whether the PAC URL is automatically detected or manually specified.
 
-Alpaca can be downloaded from the [GitHub releases page][1].
+## Visual Evidence of the Fix
 
-## Install from distribution packages
+![PR Fix Results](PR%20pacfinder_darwin%20fix.png)
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/alpaca-proxy.svg)](https://repology.org/project/alpaca-proxy/versions)
+This image shows:
 
-## Usage
-
-Start Alpaca by running the `alpaca` binary.
-
-If the proxy server requires valid authentication credentials, you can provide them by means of:
-
-- the shell prompt, if `-d` is passed,
-- the shell environment, if `NTLM_CREDENTIALS` is set,
-- the system keyring (macOS, Windows and Linux/GNOME supported), if none of the above applies.
-
-Otherwise, the authentication with proxy will be simply ignored.
-
-### Shell Prompt
-
-You can also supply your domain and username (via command-line flags) and a
-password (via a prompt):
-
-```sh
-$ alpaca -d MYDOMAIN -u me
-Password (for MYDOMAIN\me):
+### Before the PR
+The system was unable to detect PAC URLs properly, showing:
+```
+No PAC URL specified or detected; all requests will be made directly
 ```
 
-### Non-interactive launch
-
-If you want to use Alpaca without any interactive password prompt, you can store
-your NTLM credentials (domain, username and MD4-hashed password) in an
-environment variable called `$NTLM_CREDENTIALS`. You can use the `-H` flag to
-generate this value:
-
-```sh
-$ ./alpaca -d MYDOMAIN -u me -H
-# Add this to your ~/.profile (or equivalent) and restart your shell
-NTLM_CREDENTIALS="me@MYDOMAIN:823893adfad2cda6e1a414f3ebdf58f7"; export NTLM_CREDENTIALS
+### After the PR
+The system successfully detects and uses the PAC URL:
+```
+Attempting to download PAC from http://pac.[domain].pac
 ```
 
-Note that this hash is *not* cryptographically secure; it's just meant to stop
-people from being able to read your password with a quick glance.
-
-Once you've set this environment variable, you can start Alpaca by running
-`./alpaca`.
-
-### Keyring
-
-On macOS, if you use [NoMAD](https://nomad.menu/products/#nomad) and have configured it
-to [use the keychain](https://nomad.menu/help/keychain-usage/), Alpaca will use
-these credentials to authenticate to any NTLM challenge from your proxies.
-
-On Windows and Linux/GNOME you will need some extra work to persist the username (`NTLM_USERNAME`) and the domain (`NTLM_DOMAIN`) 
-in the shell environoment, while the password in the system keyring. Alpaca will read the password from the system keyring 
-(in the `login` collection) using the attributes `service=alpaca` and `username=$NTLM_USERNAME`.
-
-To store the password in the GNOME keyring, do the following:
-```bash
-$ export NTLM_USERNAME=<your-username-here>
-$ export NTLM_DOMAIN=<your-domain-here>
-$ sudo apt install libsecret-tools
-$ secret-tool store -c login -l "NTLM credentials" "service" "alpaca" "username" $NTLM_USERNAME
-Password:
-# Type your password, then run
-$ alpaca
+The `scutil --proxy` command output shows that the PAC configuration is available in the system:
+```
+ProxyAutoConfigEnable : 1
+ProxyAutoConfigURLString : http://pac.[domain].pac
 ```
 
-On macOS and Linux/GNOME systems, Alpaca uses the PAC URL from your system settings.
-If you'd like to override this, or if Alpaca fails to detect your settings, you
-can set this manually using the `-C` flag.
+## Technical Implementation Details
 
----
+### Original Implementation Issues
 
-### Proxy
+The original implementation had several limitations:
 
-You also need to configure your tools to send requests via Alpaca. Usually this
-will require setting the `http_proxy` and `https_proxy` environment variables:
+1. **Single Point of Failure**: It relied solely on SCDynamicStoreCopyValue with a specific key to retrieve proxy settings
+2. **No Fallback Mechanism**: If the primary method failed, there was no alternative way to retrieve the PAC URL
+3. **Limited Error Handling**: The code didn't properly check return values or handle error conditions
+4. **Lack of Debugging Information**: No logging to help diagnose issues in production
 
-```sh
-$ export http_proxy=http://localhost:3128
-$ export https_proxy=http://localhost:3128
-$ curl -s https://raw.githubusercontent.com/samuong/alpaca/master/README.md
-# Alpaca
-...
-```
+### PR Fix Implementation
 
-When moving from, say, a corporate network to a public WiFi network (or
-vice-versa), the proxies listed in the PAC script might become unreachable.
-When this happens, Alpaca will temporarily bypass the parent proxy and send
-requests directly, so there's no need to manually unset/re-set `http_proxy` and
-`https_proxy` as you move between networks.
+The PR fix addressed these issues by:
 
-[1]: https://github.com/samuong/alpaca/releases
-[2]: https://img.shields.io/github/v/tag/samuong/alpaca.svg?logo=github&label=latest
-[3]: https://img.shields.io/github/actions/workflow/status/samuong/alpaca/ci.yml?branch=master
-[4]: https://img.shields.io/github/downloads/samuong/alpaca/latest/total
+1. **Multiple Detection Methods**: Implementing two separate methods to retrieve the PAC URL
+2. **Improved Error Handling**: Adding proper validation of return values and error logging
+3. **Better Code Organization**: Splitting functionality into separate methods with clear responsibilities
+4. **Enhanced Debugging**: Adding (commented) logging statements that can be enabled for troubleshooting
+
+### Key Code Improvements
+
+1. **Error Handling for Store Creation**:
+   ```go
+   storeRef := C.SCDynamicStoreCreate_trampoline()
+   if storeRef == 0 {
+       log.Fatalf("Failed to create SCDynamicStore")
+   }
+   ```
+
+2. **Validation of CFNumberGetValue**:
+   ```go
+   if C.CFNumberGetValue(pacEnabled, C.kCFNumberIntType, unsafe.Pointer(&enabled)) == 0 {
+       // log.Printf("Could not retrieve value of PAC enabled flag using SCDynamicStoreCopyValue")
+       return ""
+   }
+   ```
+
+3. **New Helper Function**:
+   ```go
+   func CFStringCreateWithCString(s string) C.CFStringRef {
+       cs := C.CString(s)
+       defer C.free(unsafe.Pointer(cs))
+       return C.CFStringCreateWithCString(C.kCFAllocatorDefault, cs, C.kCFStringEncodingUTF8)
+   }
+   ```
+
+## Conclusion
+
+The PR significantly improved the PAC URL detection by:
+
+1. Adding a redundant detection method for better reliability
+2. Improving error handling and code structure
+3. Making the code more robust against different system configurations
+
+These changes ensure that the PAC URL is properly detected across various macOS environments and configurations, making the application more reliable for all users.
