@@ -1,2 +1,5 @@
 /alpaca
+/alpaca.exe
+.vscode
+__debug_bin*
 .idea
