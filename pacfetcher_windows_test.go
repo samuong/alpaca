@@ -42,7 +42,7 @@ func TestOnWindowsWithSubst(t *testing.T) {
 
 	buf, err := os.ReadFile("T:\\proxy.pac")
 	require.NoError(t, err)
-	assert.Equal(t, content, string(buf))
+	assert.Equal(t, string(content), string(buf))
 
 	_, err = os.ReadFile("T:\\nonexistent.txt")
 	require.Error(t, err)
