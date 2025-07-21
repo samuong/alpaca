@@ -39,7 +39,8 @@ func whoAmI() string {
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 	host := flag.String("l", "localhost", "address to listen on")
-	port := flag.Int("p", 3128, "port number to listen on")
+	port := flag.Int("p", 3128, "http port number to listen on")
+	socksPort := flag.Int("s", 8010, "socks port number to listen on")
 	pacurl := flag.String("C", "", "url of proxy auto-config (pac) file")
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
 	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
@@ -82,16 +83,31 @@ func main() {
 
 	errch := make(chan error)
 
+	// http server
 	s := createServer(*host, *port, *pacurl, a)
 
 	for _, network := range networks(*host) {
+		// HTTP/HTTPS Server
 		go func(network string) {
-			l, err := net.Listen(network, s.Addr)
+			l, err := net.Listen(network, ":"+strconv.Itoa(*port))
 			if err != nil {
 				errch <- err
 			} else {
 				log.Printf("Listening on %s %s", network, s.Addr)
 				errch <- s.Serve(l)
+			}
+		}(network)
+
+		// Socks5 server
+		go func(network string) {
+			socksaddr := fmt.Sprintf("%s:%d", *host, *socksPort)
+			httpaddr := fmt.Sprintf("%s:%d", *host, *port)
+			srv, err := startSocksServer(httpaddr, a)
+			if err != nil {
+				log.Printf("Failed to start socks5 server: %v", err)
+			} else {
+				log.Printf("SOCKS5 (via HTTP proxy %s) listening on %s", httpaddr, socksaddr)
+				errch <- srv.ListenAndServe(network, socksaddr)
 			}
 		}(network)
 	}
