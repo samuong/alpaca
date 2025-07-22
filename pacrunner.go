@@ -1,4 +1,4 @@
-// Copyright 2019, 2021, 2023, 2024 The Alpaca Authors
+// Copyright 2019, 2021, 2023, 2024, 2025 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -52,6 +52,7 @@ func (pr *PACRunner) Update(pacjs []byte) error {
 	set("dnsResolve", dnsResolve)
 	set("convert_addr", convertAddr)
 	set("myIpAddress", myIpAddress)
+	set("myIpAddressEx", myIpAddressEx)
 	set("dnsDomainLevels", dnsDomainLevels)
 	set("shExpMatch", shExpMatch)
 	set("weekdayRange", func(fc otto.FunctionCall) otto.Value {
@@ -182,16 +183,13 @@ func convertAddr(call otto.FunctionCall) otto.Value {
 	return toValue(binary.BigEndian.Uint32(ipv4))
 }
 
-func myIpAddress(call otto.FunctionCall) otto.Value {
-	// This function works like Chrome's myIpAddress() function, except
-	// that we avoid returning an IPv6 address.
-	// https://github.com/samuong/alpaca/issues/10
+func myIpAddress(_ otto.FunctionCall) otto.Value {
 	// https://chromium.googlesource.com/chromium/src/+/ee43fa5328856129f46566b2ea1be5811739681c/net/docs/proxy.md#Resolving-client_s-IP-address-within-a-PAC-script-using-myIpAddress
 	if localAddr := probeRoute("8.8.8.8"); localAddr != "" {
 		return toValue(localAddr)
 	}
-	if ip := resolveHostname(); ip != "" {
-		return toValue(ip)
+	if ips := resolveHostname(false); len(ips) > 0 {
+		return toValue(ips[0].String())
 	}
 	private := []string{"10.0.0.0", "172.16.0.0", "192.168.0.0"}
 	for _, remoteAddr := range private {
@@ -202,17 +200,53 @@ func myIpAddress(call otto.FunctionCall) otto.Value {
 	return toValue("127.0.0.1")
 }
 
+func myIpAddressEx(_ otto.FunctionCall) otto.Value {
+	// https://chromium.googlesource.com/chromium/src/+/ee43fa5328856129f46566b2ea1be5811739681c/net/docs/proxy.md#resolving-client_s-ip-address-within-a-pac-script-using-myipaddressex
+	public := []string{"8.8.8.8", "2001:4860:4860::8888"}
+	if ips := probeRoutes(public); ips != "" {
+		return toValue(ips)
+	}
+	if ips := resolveHostname(true); len(ips) > 0 {
+		var b strings.Builder
+		b.WriteString(ips[0].String())
+		for _, ip := range ips[1:] {
+			b.WriteRune(';')
+			b.WriteString(ip.String())
+		}
+		return toValue(b.String())
+	}
+	private := []string{"10.0.0.0", "172.16.0.0", "192.168.0.0", "FC00::"}
+	ips := probeRoutes(private)
+	return toValue(ips)
+}
+
+func probeRoutes(addresses []string) string {
+	var slice []string
+	set := map[string]struct{}{}
+	for _, address := range addresses {
+		localAddr := probeRoute(address)
+		if localAddr == "" {
+			continue
+		}
+		if _, ok := set[localAddr]; ok {
+			continue
+		}
+		set[localAddr] = struct{}{}
+		slice = append(slice, localAddr)
+	}
+	return strings.Join(slice, ";")
+}
+
 // probeRoute creates a UDP "connection" to the remote address, and returns the
 // local interface address. This does involve a system call, but does not
 // generate any network traffic since UDP is a connectionless protocol.
-func probeRoute(remote string) string {
-	conn, err := net.Dial("udp4", net.JoinHostPort(remote, "80"))
+func probeRoute(address string) string {
+	conn, err := net.Dial("udp", net.JoinHostPort(address, "80"))
 	if err != nil {
 		return ""
 	}
 	local, ok := conn.LocalAddr().(*net.UDPAddr)
 	if !ok {
-		// XXX: This is very unexpected, is it better to panic here?
 		return ""
 	}
 	if local.IP.IsLoopback() ||
@@ -223,26 +257,28 @@ func probeRoute(remote string) string {
 	return local.IP.String()
 }
 
-// resolveHostname does a DNS resolve of the machine's hostname, and returns
-// the first IPv4 result if there is one, or the empty string.
-func resolveHostname() string {
+// resolveHostname does a DNS resolve of the machine's hostname, and filters
+// out any loopback and link-local addresses, as well as any IPv6 addresses if
+// ipv6 is set to false.
+func resolveHostname(ipv6 bool) []net.IP {
 	host, err := os.Hostname()
 	if err != nil {
-		return ""
+		return nil
 	}
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		return ""
+		return nil
 	}
+	var addrs []net.IP
 	for _, ip := range ips {
 		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 			continue
 		}
-		if ipv4 := ip.To4(); len(ipv4) == net.IPv4len {
-			return ipv4.String()
+		if ip.To4() != nil || ipv6 {
+			addrs = append(addrs, ip)
 		}
 	}
-	return ""
+	return addrs
 }
 
 func dnsDomainLevels(call otto.FunctionCall) otto.Value {
