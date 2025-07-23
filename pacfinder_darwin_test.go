@@ -23,7 +23,7 @@ import (
 )
 
 func TestFindPACURLStatic(t *testing.T) {
-	pac := "http://internal.anz.com/proxy.pac"
+	pac := "http://internal.example.com/proxy.pac"
 	finder := newPacFinder(pac)
 
 	foundPac, _ := finder.findPACURL()

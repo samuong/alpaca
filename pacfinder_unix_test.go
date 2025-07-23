@@ -35,13 +35,13 @@ func TestFindPACURL(t *testing.T) {
 
 	require.NoError(t, os.Setenv("PATH", dir))
 	tmpfn := filepath.Join(dir, "gsettings")
-	mockcmd := "#!/bin/sh\necho \\'http://internal.anz.com/proxy.pac\\'\n"
+	mockcmd := "#!/bin/sh\necho \\'http://internal.example.com/proxy.pac\\'\n"
 	require.NoError(t, os.WriteFile(tmpfn, []byte(mockcmd), 0700))
 
 	pf := newPacFinder("")
 	pacURL, err := pf.findPACURL()
 	require.NoError(t, err)
-	assert.Equal(t, "http://internal.anz.com/proxy.pac", pacURL)
+	assert.Equal(t, "http://internal.example.com/proxy.pac", pacURL)
 }
 
 func TestFindPACURLWhenGsettingsIsntAvailable(t *testing.T) {
