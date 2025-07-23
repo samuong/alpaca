@@ -61,18 +61,6 @@ func (finder *pacFinder) findPACURL() (string, error) {
 		return finder.pacUrl, nil
 	}
 
-	// Using SCDynamicStoreCopyProxies to get PAC URL
-	pacUrl := finder.getPACUrlFromSCDynamicStoreCopyProxies()
-	if pacUrl != "" {
-		// log.Printf("Using PAC URL from SCDynamicStoreCopyProxies method: %s", pacUrl)
-		return pacUrl, nil
-	}
-
-	// log.Printf("No PAC URL found using SCDynamicStoreCopyProxies")
-	return "", nil
-}
-
-func (finder *pacFinder) getPACUrlFromSCDynamicStoreCopyProxies() string {
 	proxySettings := C.SCDynamicStoreCopyProxies(finder.storeRef)
 	if proxySettings == 0 {
 		// log.Printf("No proxy settings found using SCDynamicStoreCopyProxies")
