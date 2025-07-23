@@ -42,7 +42,8 @@ func newPacFinder(pacUrl string) *pacFinder {
 	}
 	storeRef := C.SCDynamicStoreCreate_trampoline()
 	if storeRef == 0 {
-		log.Fatalf("Failed to create SCDynamicStore")
+		log.Print("Unable to access system network information")
+		return &pacFinder{"", 0}
 	}
 	return &pacFinder{"", storeRef, true}
 }
