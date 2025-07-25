@@ -36,9 +36,25 @@ func whoAmI() string {
 	return me.Username
 }
 
+type stringArrayFlag []string
+
+var hosts stringArrayFlag
+
+func (s *stringArrayFlag) String() string {
+	return fmt.Sprintf("%v", *s)
+}
+
+func (s *stringArrayFlag) Set(value string) error {
+	if value == "" {
+		return nil
+	}
+	*s = append(*s, value)
+	return nil
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
-	host := flag.String("l", "localhost", "address to listen on")
+	flag.Var(&hosts, "l", "address to listen on")
 	port := flag.Int("p", 3128, "port number to listen on")
 	pacurl := flag.String("C", "", "url of proxy auto-config (pac) file")
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
@@ -46,6 +62,11 @@ func main() {
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
 	version := flag.Bool("version", false, "print version number")
 	flag.Parse()
+
+	// default to localhost if no hosts are specified
+	if len(hosts) == 0 {
+		hosts = append(hosts, "localhost")
+	}
 
 	if *version {
 		fmt.Println("Alpaca", BuildVersion)
@@ -82,18 +103,20 @@ func main() {
 
 	errch := make(chan error)
 
-	s := createServer(*host, *port, *pacurl, a)
+	for _, host := range hosts {
+		s := createServer(host, *port, *pacurl, a)
 
-	for _, network := range networks(*host) {
-		go func(network string) {
-			l, err := net.Listen(network, s.Addr)
-			if err != nil {
-				errch <- err
-			} else {
-				log.Printf("Listening on %s %s", network, s.Addr)
-				errch <- s.Serve(l)
-			}
-		}(network)
+		for _, network := range networks(host) {
+			go func(network string) {
+				l, err := net.Listen(network, s.Addr)
+				if err != nil {
+					errch <- err
+				} else {
+					log.Printf("Listening on %s %s", network, s.Addr)
+					errch <- s.Serve(l)
+				}
+			}(network)
+		}
 	}
 
 	log.Fatal(<-errch)
