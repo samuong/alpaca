@@ -1,4 +1,4 @@
-// Copyright 2019, 2021, 2022 The Alpaca Authors
+// Copyright 2019, 2021, 2022, 2025 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -103,16 +103,16 @@ func main() {
 
 	errch := make(chan error)
 
+	s := createServer(*port, *pacurl, a)
 	for _, host := range hosts {
-		s := createServer(host, *port, *pacurl, a)
-
+		address := net.JoinHostPort(host, strconv.Itoa(*port))
 		for _, network := range networks(host) {
 			go func(network string) {
-				l, err := net.Listen(network, s.Addr)
+				l, err := net.Listen(network, address)
 				if err != nil {
 					errch <- err
 				} else {
-					log.Printf("Listening on %s %s", network, s.Addr)
+					log.Printf("Listening on %s %s", network, address)
 					errch <- s.Serve(l)
 				}
 			}(network)
@@ -122,7 +122,7 @@ func main() {
 	log.Fatal(<-errch)
 }
 
-func createServer(host string, port int, pacurl string, a *authenticator) *http.Server {
+func createServer(port int, pacurl string, a *authenticator) *http.Server {
 	pacWrapper := NewPACWrapper(PACData{Port: port})
 	proxyFinder := NewProxyFinder(pacurl, pacWrapper)
 	proxyHandler := NewProxyHandler(a, getProxyFromContext, proxyFinder.blockProxy)
@@ -137,8 +137,6 @@ func createServer(host string, port int, pacurl string, a *authenticator) *http.
 	handler = AddContextID(handler)
 
 	return &http.Server{
-		// Set the addr to host(defaults to localhost) : port(defaults to 3128)
-		Addr:    net.JoinHostPort(host, strconv.Itoa(port)),
 		Handler: handler,
 		// TODO: Implement HTTP/2 support. In the meantime, set TLSNextProto to a non-nil
 		// value to disable HTTP/2.
