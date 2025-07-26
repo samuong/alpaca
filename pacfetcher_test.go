@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -115,6 +116,101 @@ func TestResponseLimit(t *testing.T) {
 	assert.False(t, pf.isConnected())
 }
 
+func TestPacUrlBad(t *testing.T) {
+	sUrl := "://bad"
+	pf := newPACFetcher(sUrl)
+	sActualUrl, err := pf.pacFinder.findPACURL()
+	// bad url bypass
+	assert.NoError(t, err)
+	assert.Equal(t, sUrl, sActualUrl)
+	assert.Nil(t, pf.download())
+}
+
+func TestPacUrlRelaToAbs(t *testing.T) {
+	sUrl := "some"
+	pf := newPACFetcher(sUrl)
+	actualUrl, err := pf.pacFinder.findPACURL()
+	assert.NoError(t, err)
+	assert.True(t, strings.HasPrefix(actualUrl, "file://"))
+	assert.True(t, strings.HasSuffix(actualUrl, "/"+sUrl))
+}
+
+func TestValidateFileUriOpaque(t *testing.T) {
+	u, err := url.Parse("file:a/b")
+	assert.NoError(t, err)
+	assert.Error(t, validateFileUri(u))
+}
+
+func TestValidateFileUriUsername(t *testing.T) {
+	u, err := url.Parse("file://user@/a/b")
+	assert.NoError(t, err)
+	assert.Error(t, validateFileUri(u))
+}
+
+func TestValidateFileUriHost(t *testing.T) {
+	u, err := url.Parse("file://./a/b")
+	assert.NoError(t, err)
+	assert.Error(t, validateFileUri(u))
+}
+
+func TestValidateFileUriJavaCanon(t *testing.T) {
+	path := "/a/b"
+	u, err := url.Parse("file:" + path)
+	assert.NoError(t, err)
+	assert.Equal(t, path, u.Path)
+	assert.NoError(t, validateFileUri(u))
+}
+
+func TestValidateFileUriTraditional(t *testing.T) {
+	path := "/a/b"
+	u, err := url.Parse("file://" + path)
+	assert.NoError(t, err)
+	assert.Equal(t, path, u.Path)
+	assert.NoError(t, validateFileUri(u))
+}
+
+func TestExtractNativePathDrive(t *testing.T) {
+	utilTestExtractNativePath(t, "C:/a/b")
+}
+
+func TestExtractNativePathUnc(t *testing.T) {
+	utilTestExtractNativePath(t, "//host/share/a/b")
+}
+
+func utilTestExtractNativePath(t *testing.T, path string) {
+	u, err := url.Parse("file://" + "/" + path)
+	assert.NoError(t, err)
+	actualPath, err := extractNativePath(u)
+	assert.NoError(t, err)
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, path, actualPath)
+	} else {
+		assert.Equal(t, "/"+path, actualPath)
+	}
+}
+
+func TestFixFileRequestUrlDrive(t *testing.T) {
+	utilTestFixFileRequestUrl(t, "C:/", "a/b")
+}
+
+func TestFixFileRequestUrlUnc(t *testing.T) {
+	utilTestFixFileRequestUrl(t, "//host/share/", "a/b")
+}
+
+func utilTestFixFileRequestUrl(t *testing.T, volume string, path string) {
+	req, err := http.NewRequest("GET", "file://"+"/"+volume+path, nil)
+	assert.NoError(t, err)
+	fs, err := fixFileRequestUrl(req)
+	assert.NoError(t, err)
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, http.Dir(filepath.FromSlash(volume)), fs)
+		assert.Equal(t, path, req.URL.Path)
+	} else {
+		assert.Equal(t, http.Dir("/"), fs)
+		assert.Equal(t, "/"+volume+path, req.URL.Path)
+	}
+}
+
 func TestPacFromFilesystem(t *testing.T) {
 	// Set up a test PAC file
 	content := []byte(`function FindProxyForURL(url, host) { return "DIRECT" }`)
@@ -123,7 +219,7 @@ func TestPacFromFilesystem(t *testing.T) {
 	defer os.RemoveAll(tempdir)
 	pacPath := path.Join(tempdir, "test.pac")
 	require.NoError(t, os.WriteFile(pacPath, content, 0644))
-	pacURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(pacPath)}
+	pacURL := &url.URL{Scheme: "file", Path: fileToUriPath(pacPath)}
 	pf := newPACFetcher(pacURL.String())
 	pf.monitor = newNetMonitor()
 	assert.Equal(t, content, pf.download())
