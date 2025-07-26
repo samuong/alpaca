@@ -38,8 +38,6 @@ func whoAmI() string {
 
 type stringArrayFlag []string
 
-var hosts stringArrayFlag
-
 func (s *stringArrayFlag) String() string {
 	return fmt.Sprintf("%v", *s)
 }
@@ -54,6 +52,8 @@ func (s *stringArrayFlag) Set(value string) error {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+
+	var hosts stringArrayFlag
 	flag.Var(&hosts, "l", "address to listen on")
 	port := flag.Int("p", 3128, "port number to listen on")
 	pacurl := flag.String("C", "", "url of proxy auto-config (pac) file")
