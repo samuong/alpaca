@@ -37,14 +37,14 @@ type pacFinder struct {
 
 func newPacFinder(pacUrl string) *pacFinder {
 	if pacUrl != "" {
-		return &pacFinder{pacUrl, 0, false}
+		return &pacFinder{pacUrl, 0}
 	}
 	storeRef := C.SCDynamicStoreCreate_trampoline()
 	if storeRef == 0 {
 		log.Print("Unable to access system network information")
 		return &pacFinder{"", 0}
 	}
-	return &pacFinder{"", storeRef, true}
+	return &pacFinder{"", storeRef}
 }
 
 func (finder *pacFinder) pacChanged() bool {
