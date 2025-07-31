@@ -1,4 +1,4 @@
-// Copyright 2019, 2021, 2022 The Alpaca Authors
+// Copyright 2019, 2021, 2022, 2025 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -81,6 +81,8 @@ func requireOK(resp *http.Response, err error) (*http.Response, error) {
 }
 
 func (pf *pacFetcher) download() []byte {
+	// TODO: Combine pacChanged() and findPACURL() as described in
+	// https://github.com/samuong/alpaca/pull/156#issuecomment-3125070335
 	if !pf.monitor.addrsChanged() && !pf.pacFinder.pacChanged() {
 		return nil
 	}

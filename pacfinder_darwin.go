@@ -1,4 +1,4 @@
-// Copyright 2019, 2021, 2022 The Alpaca Authors
+// Copyright 2019, 2021, 2022, 2025 The Alpaca Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,19 +33,18 @@ import (
 type pacFinder struct {
 	pacUrl   string
 	storeRef C.SCDynamicStoreRef
-	auto     bool
 }
 
 func newPacFinder(pacUrl string) *pacFinder {
 	if pacUrl != "" {
-		return &pacFinder{pacUrl, 0, false}
+		return &pacFinder{pacUrl, 0}
 	}
 	storeRef := C.SCDynamicStoreCreate_trampoline()
 	if storeRef == 0 {
 		log.Print("Unable to access system network information")
 		return &pacFinder{"", 0}
 	}
-	return &pacFinder{"", storeRef, true}
+	return &pacFinder{"", storeRef}
 }
 
 func (finder *pacFinder) pacChanged() bool {
@@ -64,7 +63,7 @@ func (finder *pacFinder) findPACURL() (string, error) {
 	proxySettings := C.SCDynamicStoreCopyProxies(finder.storeRef)
 	if proxySettings == 0 {
 		// log.Printf("No proxy settings found using SCDynamicStoreCopyProxies")
-		return ""
+		return "", nil
 	}
 	defer C.CFRelease(C.CFTypeRef(proxySettings))
 
@@ -74,27 +73,27 @@ func (finder *pacFinder) findPACURL() (string, error) {
 	pacEnabled := C.CFNumberRef(C.CFDictionaryGetValue(proxySettings, unsafe.Pointer(kSCPropNetProxiesProxyAutoConfigEnable)))
 	if pacEnabled == 0 {
 		// log.Printf("PAC enable flag not found in proxy settings using SCDynamicStoreCopyProxies")
-		return ""
+		return "", nil
 	}
 
 	var enabled C.int
 	if C.CFNumberGetValue(pacEnabled, C.kCFNumberIntType, unsafe.Pointer(&enabled)) == 0 {
 		// log.Printf("Could not retrieve value of PAC enabled flag using SCDynamicStoreCopyProxies")
-		return ""
+		return "", nil
 	}
 
 	if enabled == 0 {
 		// log.Printf("PAC is not enabled using SCDynamicStoreCopyProxies")
-		return ""
+		return "", nil
 	}
 
 	pacURL := C.CFStringRef(C.CFDictionaryGetValue(proxySettings, unsafe.Pointer(kSCPropNetProxiesProxyAutoConfigURLString)))
 	if pacURL == 0 {
 		// log.Printf("PAC URL not found in proxy settings using SCDynamicStoreCopyProxies")
-		return ""
+		return "", nil
 	}
 
-	return CFStringToString(pacURL)
+	return CFStringToString(pacURL), nil
 }
 
 // CFStringToString converts a CFStringRef to a string.
