@@ -15,7 +15,6 @@
 package main
 
 import (
-	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -134,37 +133,20 @@ func TestPacFromFilesystem(t *testing.T) {
 func TestDecodeDataURL_Base64(t *testing.T) {
 	uri := "data:application/x-ns-proxy-autoconfig;base64,ZnVuY3Rpb24gRmluZFByb3h5Rm9yVVJMKHVybCwgaG9zdCkgewogIHJldHVybiAiUFJPWFkgcHJveHk6ODA4MCI7Cn0K"
 	want := []byte("function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n")
-	got, err := decodeDataURL(uri)
-	if err != nil {
-		t.Errorf("decodeDataURL() error = %v, wantErr %v", err, false)
-		return
-	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("decodeDataURL() = %v, want %v", string(got), string(want))
-	}
+	pf := newPACFetcher(uri)
+	assert.Equal(t, want, pf.download())
 }
 
 func TestDecodeDataURL_URLEncoded(t *testing.T) {
 	uri := "data:,function%20FindProxyForURL(url%2C%20host)%20%7B%0A%20%20return%20%22PROXY%20proxy%3A8080%22%3B%0A%7D%0A"
-	want := []byte("function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n")
-	got, err := decodeDataURL(uri)
-	if err != nil {
-		t.Errorf("decodeDataURL() error = %v, wantErr %v", err, false)
-		return
-	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("decodeDataURL() = %v, want %v", string(got), string(want))
-	}
+	want := "function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n"
+	pf := newPACFetcher(uri)
+	assert.Equal(t, want, string(pf.download()))
 }
 
 func TestDecodeDataURL_NonDataScheme(t *testing.T) {
 	uri := "http://example.com"
 	got, err := decodeDataURL(uri)
-	if err != nil {
-		t.Errorf("decodeDataURL() error = %v, wantErr %v", err, false)
-		return
-	}
-	if got != nil {
-		t.Errorf("decodeDataURL() = %v, want %v", got, nil)
-	}
+	assert.Nil(t, got)
+	assert.Nil(t, err)
 }
