@@ -16,11 +16,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 )
@@ -80,6 +83,46 @@ func requireOK(resp *http.Response, err error) (*http.Response, error) {
 	}
 }
 
+// decodeDataURL decodes a data URL (e.g., data:text/plain;base64,SGVsbG8sIFdvcmxkIQ==).
+// It supports both base64 and URL-encoded data, and enforces the maxResponseBytes size limit.
+// See https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs for details.
+func decodeDataURL(uri string) ([]byte, error) {
+	parsed_url, err := url.Parse(uri)
+
+	if err != nil {
+		return nil, fmt.Errorf("Error parsing pac url: %w", err)
+	}
+
+	if parsed_url.Scheme != "data" {
+		return nil, nil
+	}
+	parts := strings.SplitN(parsed_url.Opaque, ",", 2)
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("Error parsing data URL: Invalid Format")
+	}
+
+	isBase64 := slices.Contains(strings.Split(parts[0], ";"), "base64")
+	if isBase64 {
+		bytes, err := base64.StdEncoding.DecodeString(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("Error parsing base64 data URL: %w", err)
+		}
+		if len(bytes) > maxResponseBytes {
+			return nil, fmt.Errorf("Error parsing base64 data URL: PAC JS is too big (limit is %d bytes)", maxResponseBytes)
+		}
+		return bytes, nil
+	}
+
+	decoded, err := url.QueryUnescape(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("Error parsing data URL: %w", err)
+	}
+	if len(decoded) > maxResponseBytes {
+		return nil, fmt.Errorf("Error parsing data URL: PAC JS is too big (limit is %d bytes)", maxResponseBytes)
+	}
+	return []byte(decoded), nil
+}
+
 func (pf *pacFetcher) download() []byte {
 	// TODO: Combine pacChanged() and findPACURL() as described in
 	// https://github.com/samuong/alpaca/pull/156#issuecomment-3125070335
@@ -98,6 +141,18 @@ func (pf *pacFetcher) download() []byte {
 	}
 
 	log.Printf("Attempting to download PAC from %s", pacurl)
+
+	pac, err := decodeDataURL(pacurl)
+	if err != nil {
+		log.Printf("Error downloading PAC file: %v", err)
+		return nil
+	}
+
+	if pac != nil {
+		pf.connected = true
+		return pac
+	}
+
 	resp, err := requireOK(pf.client.Get(pacurl))
 	if err != nil {
 		// Sometimes, if we try to download too soon after a network change, the PAC
