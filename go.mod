@@ -11,6 +11,7 @@ require (
 	github.com/samuong/go-ntlmssp v0.0.0-20240616070040-65a20607c744
 	github.com/stretchr/testify v1.9.0
 	github.com/zalando/go-keyring v0.2.5
+	golang.org/x/net v0.21.0
 	golang.org/x/term v0.21.0
 )
 

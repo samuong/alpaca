@@ -118,6 +118,9 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 		} else if fields[0] == "HTTPS" {
 			scheme = "https"
 			defaultPort = "443"
+		} else if fields[0] == "SOCKS5" {
+			scheme = "socks5"
+			defaultPort = "1080"
 		} else {
 			log.Printf("[%d] Couldn't parse proxy: %q", id, elem)
 			continue
