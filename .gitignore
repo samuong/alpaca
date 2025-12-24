@@ -3,3 +3,4 @@
 .vscode
 __debug_bin*
 .idea
+.DS_Store
