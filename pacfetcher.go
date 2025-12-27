@@ -30,6 +30,11 @@ import (
 // The maximum size (in bytes) allowed for a PAC script. At 1 MB, this matches the limit in Chrome.
 const maxResponseBytes = 1 * 1024 * 1024
 
+// The maximum size (in bytes) allowed for a data URL.
+// Chromium and Firefox limit data URLs to 512MB.
+// See https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/data#length_limitations
+const maxDataURLLength = 512 * 1024 * 1024
+
 // The time to wait before retrying a failed PAC download. This is similar to Chrome's delay:
 // https://cs.chromium.org/chromium/src/net/proxy_resolution/proxy_resolution_service.cc?l=96&rcl=3db5f65968c3ecab3932c1ff7367ad28834f9502
 var delayAfterFailedDownload = 2 * time.Second
@@ -95,6 +100,11 @@ func decodeDataURL(uri string) ([]byte, error) {
 	if parsedURL.Scheme != "data" {
 		return nil, nil
 	}
+
+	if len(uri) > maxDataURLLength {
+		return nil, fmt.Errorf("Error parsing data URL: PAC JS is too big (limit is %d bytes)", maxDataURLLength)
+	}
+
 	metadata, data, ok := strings.Cut(parsedURL.Opaque, ",")
 	if !ok {
 		return nil, fmt.Errorf("Error parsing data URL: Invalid Format")
@@ -105,18 +115,12 @@ func decodeDataURL(uri string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Error decoding base64 data URL: %w", err)
 		}
-		if len(bytes) > maxResponseBytes {
-			return nil, fmt.Errorf("Error parsing base64 data URL: PAC JS is too big (limit is %d bytes)", maxResponseBytes)
-		}
 		return bytes, nil
 	}
 
 	decoded, err := url.QueryUnescape(data)
 	if err != nil {
 		return nil, fmt.Errorf("Error parsing data URL: %w", err)
-	}
-	if len(decoded) > maxResponseBytes {
-		return nil, fmt.Errorf("Error parsing data URL: PAC JS is too big (limit is %d bytes)", maxResponseBytes)
 	}
 	return []byte(decoded), nil
 }
