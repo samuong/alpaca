@@ -87,16 +87,16 @@ func requireOK(resp *http.Response, err error) (*http.Response, error) {
 // It supports both base64 and URL-encoded data, and enforces the maxResponseBytes size limit.
 // See https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs for details.
 func decodeDataURL(uri string) ([]byte, error) {
-	parsed_url, err := url.Parse(uri)
+	parsedURL, err := url.Parse(uri)
 
 	if err != nil {
 		return nil, fmt.Errorf("Error parsing pac url: %w", err)
 	}
 
-	if parsed_url.Scheme != "data" {
+	if parsedURL.Scheme != "data" {
 		return nil, nil
 	}
-	parts := strings.SplitN(parsed_url.Opaque, ",", 2)
+	parts := strings.SplitN(parsedURL.Opaque, ",", 2)
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("Error parsing data URL: Invalid Format")
 	}
