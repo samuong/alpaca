@@ -118,7 +118,7 @@ func decodeDataURL(uri string) ([]byte, error) {
 		return bytes, nil
 	}
 
-	decoded, err := url.QueryUnescape(data)
+	decoded, err := url.PathUnescape(data)
 	if err != nil {
 		return nil, fmt.Errorf("Error parsing data URL: %w", err)
 	}

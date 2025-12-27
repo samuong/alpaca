@@ -146,6 +146,11 @@ func TestDecodeDataURL(t *testing.T) {
 			"data:,function%20FindProxyForURL(url%2C%20host)%20%7B%0A%20%20return%20%22PROXY%20proxy%3A8080%22%3B%0A%7D%0A",
 			"function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n",
 		},
+		{
+			"URLEncodedWithPlus",
+			"data:,foo+bar",
+			"foo+bar",
+		},
 	}
 
 	for _, test := range tests {
