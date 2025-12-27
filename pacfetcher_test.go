@@ -138,12 +138,14 @@ func TestDecodeDataURL(t *testing.T) {
 	}{
 		{
 			"Base64",
-			"data:application/x-ns-proxy-autoconfig;base64,ZnVuY3Rpb24gRmluZFByb3h5Rm9yVVJMKHVybCwgaG9zdCkgewogIHJldHVybiAiUFJPWFkgcHJveHk6ODA4MCI7Cn0K",
+			"data:application/x-ns-proxy-autoconfig;base64,ZnVuY3Rpb24gRmluZFByb3h5Rm9yVVJMKHVybCwgaG" +
+				"9zdCkgewogIHJldHVybiAiUFJPWFkgcHJveHk6ODA4MCI7Cn0K",
 			"function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n",
 		},
 		{
 			"URLEncoded",
-			"data:,function%20FindProxyForURL(url%2C%20host)%20%7B%0A%20%20return%20%22PROXY%20proxy%3A8080%22%3B%0A%7D%0A",
+			"data:,function%20FindProxyForURL(url%2C%20host)%20%7B%0A%20%20return%20%22PROXY%20proxy%3A" +
+				"8080%22%3B%0A%7D%0A",
 			"function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n",
 		},
 		{

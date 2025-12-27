@@ -40,10 +40,10 @@ const maxDataURLLength = 512 * 1024 * 1024
 var delayAfterFailedDownload = 2 * time.Second
 
 type pacFetcher struct {
-	pacFinder  *pacFinder
-	monitor    netMonitor
-	client     *http.Client
-	connected  bool
+	pacFinder *pacFinder
+	monitor   netMonitor
+	client    *http.Client
+	connected bool
 	//cache  []byte
 	//modified time.Time
 	//fetched time.Time
@@ -70,9 +70,9 @@ func newPACFetcher(pacurl string) *pacFetcher {
 		client.Transport = &http.Transport{Proxy: nil}
 	}
 	return &pacFetcher{
-		pacFinder:  newPacFinder(pacurl),
-		monitor:    newNetMonitor(),
-		client:     client,
+		pacFinder: newPacFinder(pacurl),
+		monitor:   newNetMonitor(),
+		client:    client,
 	}
 }
 
@@ -94,7 +94,7 @@ func decodeDataURL(uri string) ([]byte, error) {
 	parsedURL, err := url.Parse(uri)
 
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing pac url: %w", err)
+		return nil, fmt.Errorf("error parsing pac url: %w", err)
 	}
 
 	if parsedURL.Scheme != "data" {
@@ -102,25 +102,26 @@ func decodeDataURL(uri string) ([]byte, error) {
 	}
 
 	if len(uri) > maxDataURLLength {
-		return nil, fmt.Errorf("Error parsing data URL: PAC JS is too big (limit is %d bytes)", maxDataURLLength)
+		return nil, fmt.Errorf("error parsing data URL: PAC JS is too big (limit is %d bytes)",
+			maxDataURLLength)
 	}
 
 	metadata, data, ok := strings.Cut(parsedURL.Opaque, ",")
 	if !ok {
-		return nil, fmt.Errorf("Error parsing data URL: Invalid Format")
+		return nil, fmt.Errorf("error parsing data URL: invalid format")
 	}
 
 	if strings.HasSuffix(metadata, ";base64") {
 		bytes, err := base64.StdEncoding.DecodeString(data)
 		if err != nil {
-			return nil, fmt.Errorf("Error decoding base64 data URL: %w", err)
+			return nil, fmt.Errorf("error decoding base64 data URL: %w", err)
 		}
 		return bytes, nil
 	}
 
 	decoded, err := url.PathUnescape(data)
 	if err != nil {
-		return nil, fmt.Errorf("Error parsing data URL: %w", err)
+		return nil, fmt.Errorf("error parsing data URL: %w", err)
 	}
 	return []byte(decoded), nil
 }
