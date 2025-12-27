@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
-	"slices"
 	"strings"
 	"time"
 )
@@ -96,14 +95,13 @@ func decodeDataURL(uri string) ([]byte, error) {
 	if parsedURL.Scheme != "data" {
 		return nil, nil
 	}
-	parts := strings.SplitN(parsedURL.Opaque, ",", 2)
-	if len(parts) < 2 {
+	metadata, data, ok := strings.Cut(parsedURL.Opaque, ",")
+	if !ok {
 		return nil, fmt.Errorf("Error parsing data URL: Invalid Format")
 	}
 
-	isBase64 := slices.Contains(strings.Split(parts[0], ";"), "base64")
-	if isBase64 {
-		bytes, err := base64.StdEncoding.DecodeString(parts[1])
+	if strings.HasSuffix(metadata, ";base64") {
+		bytes, err := base64.StdEncoding.DecodeString(data)
 		if err != nil {
 			return nil, fmt.Errorf("Error parsing base64 data URL: %w", err)
 		}
@@ -113,7 +111,7 @@ func decodeDataURL(uri string) ([]byte, error) {
 		return bytes, nil
 	}
 
-	decoded, err := url.QueryUnescape(parts[1])
+	decoded, err := url.QueryUnescape(data)
 	if err != nil {
 		return nil, fmt.Errorf("Error parsing data URL: %w", err)
 	}
