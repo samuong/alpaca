@@ -130,18 +130,30 @@ func TestPacFromFilesystem(t *testing.T) {
 	assert.True(t, pf.isConnected())
 }
 
-func TestDecodeDataURL_Base64(t *testing.T) {
-	uri := "data:application/x-ns-proxy-autoconfig;base64,ZnVuY3Rpb24gRmluZFByb3h5Rm9yVVJMKHVybCwgaG9zdCkgewogIHJldHVybiAiUFJPWFkgcHJveHk6ODA4MCI7Cn0K"
-	want := []byte("function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n")
-	pf := newPACFetcher(uri)
-	assert.Equal(t, want, pf.download())
-}
+func TestDecodeDataURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		uri      string
+		expected string
+	}{
+		{
+			"Base64",
+			"data:application/x-ns-proxy-autoconfig;base64,ZnVuY3Rpb24gRmluZFByb3h5Rm9yVVJMKHVybCwgaG9zdCkgewogIHJldHVybiAiUFJPWFkgcHJveHk6ODA4MCI7Cn0K",
+			"function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n",
+		},
+		{
+			"URLEncoded",
+			"data:,function%20FindProxyForURL(url%2C%20host)%20%7B%0A%20%20return%20%22PROXY%20proxy%3A8080%22%3B%0A%7D%0A",
+			"function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n",
+		},
+	}
 
-func TestDecodeDataURL_URLEncoded(t *testing.T) {
-	uri := "data:,function%20FindProxyForURL(url%2C%20host)%20%7B%0A%20%20return%20%22PROXY%20proxy%3A8080%22%3B%0A%7D%0A"
-	want := "function FindProxyForURL(url, host) {\n  return \"PROXY proxy:8080\";\n}\n"
-	pf := newPACFetcher(uri)
-	assert.Equal(t, want, string(pf.download()))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pf := newPACFetcher(test.uri)
+			assert.Equal(t, test.expected, string(pf.download()))
+		})
+	}
 }
 
 func TestDecodeDataURL_NonDataScheme(t *testing.T) {
