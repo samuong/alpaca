@@ -160,5 +160,5 @@ func TestDecodeDataURL_NonDataScheme(t *testing.T) {
 	uri := "http://example.com"
 	got, err := decodeDataURL(uri)
 	assert.Nil(t, got)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 }
