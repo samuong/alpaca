@@ -103,7 +103,7 @@ func decodeDataURL(uri string) ([]byte, error) {
 	if strings.HasSuffix(metadata, ";base64") {
 		bytes, err := base64.StdEncoding.DecodeString(data)
 		if err != nil {
-			return nil, fmt.Errorf("Error parsing base64 data URL: %w", err)
+			return nil, fmt.Errorf("Error decoding base64 data URL: %w", err)
 		}
 		if len(bytes) > maxResponseBytes {
 			return nil, fmt.Errorf("Error parsing base64 data URL: PAC JS is too big (limit is %d bytes)", maxResponseBytes)
