@@ -35,7 +35,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ 'macos-13', 'ubuntu-22.04', 'ubuntu-22.04-arm', 'windows-2022' ]
+        os: [ 'macos-14', 'ubuntu-22.04', 'ubuntu-22.04-arm', 'windows-2022' ]
         go: [ '1.22' ]
 
     runs-on: ${{ matrix.os }}
@@ -56,10 +56,10 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - os: 'macos-13'
+          - os: 'macos-14-large'
             goos: 'darwin'
             goarch: 'amd64'
-          - os: 'macos-13'
+          - os: 'macos-14'
             goos: 'darwin'
             goarch: 'arm64'
           - os: 'ubuntu-22.04'
