@@ -16,8 +16,10 @@ package main
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -50,9 +52,70 @@ func (s *stringArrayFlag) Set(value string) error {
 	return nil
 }
 
+func initTLSConfig() {
+	// Get system certificate pool
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil {
+		log.Printf("Warning: Failed to load system certificate pool: %v", err)
+		rootCAs = x509.NewCertPool()
+	}
+	if rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+
+	// Check for custom CA file from environment variable
+	if caFile := os.Getenv("ALPACA_CA_FILE"); caFile != "" {
+		log.Printf("Loading custom CA from: %s", caFile)
+		caCert, err := ioutil.ReadFile(caFile)
+		if err != nil {
+			log.Printf("Warning: Could not load CA file %s: %v", caFile, err)
+		} else {
+			if rootCAs.AppendCertsFromPEM(caCert) {
+				log.Printf("Successfully loaded custom CA from %s", caFile)
+			} else {
+				log.Printf("Warning: No valid certificates found in %s", caFile)
+			}
+		}
+	}
+
+	// Check for CA file in common locations
+	commonCAPaths := []string{
+		"/etc/ssl/certs/ca-certificates.crt", // Debian/Ubuntu
+		"/etc/ssl/cert.pem",                  // FreeBSD
+		"/usr/local/share/ca-certificates/", // Custom CA location
+		"./ca-bundle.crt",                   // Current directory
+	}
+
+	// Only check common paths if no custom CA file was specified
+	if os.Getenv("ALPACA_CA_FILE") == "" {
+		for _, caPath := range commonCAPaths {
+			if _, err := os.Stat(caPath); err == nil {
+				log.Printf("Found CA file at %s, loading...", caPath)
+				if caCert, err := ioutil.ReadFile(caPath); err == nil {
+					if rootCAs.AppendCertsFromPEM(caCert) {
+						log.Printf("Successfully loaded CA from %s", caPath)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Initialize global TLS configuration
+	tlsClientConfig = &tls.Config{
+		RootCAs: rootCAs,
+	}
+
+	log.Printf("TLS configuration initialized with custom root CAs")
+}
+
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
-
+	
+	// Initialize TLS configuration with custom root CA support
+	initTLSConfig()
+	
 	var hosts stringArrayFlag
 	flag.Var(&hosts, "l", "address to listen on")
 	port := flag.Int("p", 3128, "port number to listen on")
