@@ -134,6 +134,12 @@ func (pf *pacFetcher) download() []byte {
 	}
 	pf.connected = false
 
+	// We've just detected a change in network state, so close any "idle"
+	// connections from the previous network. This forces a fresh DNS
+	// lookup and TCP dial during the next PAC download. For context, see
+	// <https://github.com/samuong/alpaca/issues/165>.
+	pf.client.CloseIdleConnections()
+
 	pacurl, err := pf.pacFinder.findPACURL()
 	if err != nil {
 		log.Printf("Error while trying to detect PAC URL: %v", err)
