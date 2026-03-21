@@ -25,6 +25,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"golang.org/x/net/proxy"
 )
 
 var tlsClientConfig *tls.Config
@@ -144,12 +146,23 @@ func connectDirect(req *http.Request) (net.Conn, error) {
 	return server, err
 }
 
-func connectViaProxy(req *http.Request, proxy *url.URL, auth *authenticator) (net.Conn, error) {
+func connectViaProxy(req *http.Request, proxyURL *url.URL, auth *authenticator) (net.Conn, error) {
 	id := req.Context().Value(contextKeyID)
 	var tr transport
 	defer tr.Close()
-	if err := tr.dial(proxy); err != nil {
-		log.Printf("[%d] Error dialling proxy %s: %v", id, proxy.Host, err)
+	if proxyURL.Scheme == "socks5" {
+		dialer, err := proxy.SOCKS5("tcp", proxyURL.Host, nil, proxy.Direct)
+		if err != nil {
+			return nil, &net.OpError{Op: "proxyconnect", Net: "tcp", Err: err}
+		}
+		conn, err := dialer.Dial("tcp", req.Host)
+		if err != nil {
+			return nil, &net.OpError{Op: "proxyconnect", Net: "tcp", Err: err}
+		}
+		return conn, nil
+	}
+	if err := tr.dial(proxyURL); err != nil {
+		log.Printf("[%d] Error dialling proxy %s: %v", id, proxyURL.Host, err)
 		return nil, err
 	}
 	resp, err := tr.RoundTrip(req)
@@ -159,8 +172,8 @@ func connectViaProxy(req *http.Request, proxy *url.URL, auth *authenticator) (ne
 	} else if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
 		resp.Body.Close()
-		if err := tr.dial(proxy); err != nil {
-			log.Printf("[%d] Error re-dialling %s: %v", id, proxy.Host, err)
+		if err := tr.dial(proxyURL); err != nil {
+			log.Printf("[%d] Error re-dialling %s: %v", id, proxyURL.Host, err)
 			return nil, err
 		}
 		resp, err = auth.do(req, &tr)

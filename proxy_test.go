@@ -30,6 +30,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/things-go/go-socks5"
 )
 
 type requestLogger struct {
@@ -373,4 +374,55 @@ func TestTransportReturnsProxyConnectOpError(t *testing.T) {
 	require.Error(t, err)
 	oe := err.(*net.OpError)
 	assert.Equal(t, "proxyconnect", oe.Op)
+}
+
+func setupSOCKS5TestServers(t *testing.T) *httptest.Server {
+	// 1. Create SOCKS5 server
+	server := socks5.NewServer()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go server.Serve(l)
+	t.Cleanup(func() { l.Close() })
+	socks5Addr := l.Addr().String()
+
+	// 3. Build minimal Alpaca handler
+	proxyHandler := NewProxyHandler(nil, func(*http.Request) (*url.URL, error) {
+		return url.Parse("socks5://" + socks5Addr)
+	}, func(string) {})
+
+	var handler http.Handler = http.NotFoundHandler()
+	handler = proxyHandler.WrapHandler(handler)
+
+	// 4. Create Alpaca test server
+	alpacaServer := httptest.NewServer(handler)
+	t.Cleanup(func() { alpacaServer.Close() })
+
+	return alpacaServer
+}
+
+func TestSOCKS5Proxy(t *testing.T) {
+	alpacaServer := setupSOCKS5TestServers(t)
+
+	// Set up a destination server
+	destServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, r.URL.Path)
+	}))
+	t.Cleanup(func() { destServer.Close() })
+
+	// Make a request through the Alpaca proxy
+	proxyURL, err := url.Parse(alpacaServer.URL)
+	require.NoError(t, err)
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+	}
+	resp, err := client.Get(destServer.URL + "/testpath")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "/testpath", string(body))
 }
