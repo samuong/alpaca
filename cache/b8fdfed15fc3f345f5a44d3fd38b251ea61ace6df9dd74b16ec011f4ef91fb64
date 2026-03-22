@@ -1,0 +1,9 @@
+HTTP/1.1 200 OK
+Content-Length: 67
+Content-Type: text/plain; charset=utf-8
+Date: Sun, 22 Mar 2026 16:54:15 GMT
+X-Cached-Time: 2026-03-22T16:54:15Z
+X-Request-Time: 2026-03-22T16:54:15Z
+X-Response-Time: 2026-03-22T16:54:15Z
+
+function FindProxyForURL(url, host) { return 'HTTPS https.test:5' }

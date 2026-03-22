@@ -69,18 +69,18 @@ func TestTransportErrors(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "http://alpaca.test", nil)
 	require.NoError(t, err)
 
-	t.Run("NotConnected", func (t *testing.T) {
+	t.Run("NotConnected", func(t *testing.T) {
 		_, err = tr.RoundTrip(req)
 		assert.Error(t, err)
 	})
 
-	t.Run("Closed", func (t *testing.T) {
+	t.Run("Closed", func(t *testing.T) {
 		require.NoError(t, tr.Close())
 		_, err = tr.RoundTrip(req)
 		assert.Error(t, err)
 	})
 
-	t.Run("CloseTwice", func (t *testing.T) {
+	t.Run("CloseTwice", func(t *testing.T) {
 		assert.NoError(t, tr.Close())
 		assert.NoError(t, tr.Close())
 	})

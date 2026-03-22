@@ -14,7 +14,7 @@
 
 package main
 
-type pacFinder struct{
+type pacFinder struct {
 	pacURL string
 }
 
