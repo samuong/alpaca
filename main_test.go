@@ -17,6 +17,7 @@
 // machines. So the tests in this file are disabled by default using a build
 // constraint, and need to be run using `go test ./... -tags=squid`.
 
+//go:build squid
 // +build squid
 
 package main

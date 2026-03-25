@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 package main
 
 import (
@@ -25,18 +24,13 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/sandrolain/httpcache"
 )
 
-// The maximum size (in bytes) allowed for a PAC script. At 1 MB, this matches the limit in Chrome.
 const maxResponseBytes = 1 * 1024 * 1024
-
-// The maximum size (in bytes) allowed for a data URL.
-// Chromium and Firefox limit data URLs to 512MB.
-// See https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/data#length_limitations
 const maxDataURLLength = 512 * 1024 * 1024
 
-// The time to wait before retrying a failed PAC download. This is similar to Chrome's delay:
-// https://cs.chromium.org/chromium/src/net/proxy_resolution/proxy_resolution_service.cc?l=96&rcl=3db5f65968c3ecab3932c1ff7367ad28834f9502
 var delayAfterFailedDownload = 2 * time.Second
 
 type pacFetcher struct {
@@ -44,31 +38,38 @@ type pacFetcher struct {
 	monitor   netMonitor
 	client    *http.Client
 	connected bool
-	//cache  []byte
-	//modified time.Time
-	//fetched time.Time
-	//expiry   time.Time
-	//etag     string
 }
 
 func newPACFetcher(pacurl string) *pacFetcher {
-	client := &http.Client{Timeout: 30 * time.Second}
+	var client *http.Client
+
 	if strings.HasPrefix(pacurl, "file:") {
 		log.Print("Warning: When using a local PAC file, the online/offline status can't ",
 			"be determined by the fact that the PAC file is downloaded. Make sure you ",
 			"check for proxy connectivity in your PAC file!")
+
+		client = &http.Client{Timeout: 30 * time.Second}
+
 		if runtime.GOOS == "windows" {
 			client.Transport = http.NewFileTransport(http.Dir("C:"))
 		} else {
 			client.Transport = http.NewFileTransport(http.Dir("/"))
 		}
+
 	} else {
-		// The DefaultClient in net/http uses the proxy specified in the http(s)_proxy
-		// environment variable, which could be pointing at this instance of alpaca. When
-		// fetching the PAC file, we always use a client that goes directly to the server,
-		// rather than via a proxy.
-		client.Transport = &http.Transport{Proxy: nil}
+		// Base transport without proxy (important: avoid proxy loop)
+		baseTransport := &http.Transport{Proxy: nil}
+
+		// ✅ Use in-memory cache (FIXED)
+		cacheTransport := httpcache.NewTransport(httpcache.NewMemoryCache())
+		cacheTransport.Transport = baseTransport
+
+		client = &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: cacheTransport,
+		}
 	}
+
 	return &pacFetcher{
 		pacFinder: newPacFinder(pacurl),
 		monitor:   newNetMonitor(),
@@ -87,12 +88,8 @@ func requireOK(resp *http.Response, err error) (*http.Response, error) {
 	}
 }
 
-// decodeDataURL decodes a data URL (e.g., data:text/plain;base64,SGVsbG8sIFdvcmxkIQ==).
-// It supports both base64 and URL-encoded data, and enforces the maxResponseBytes size limit.
-// See https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs for details.
 func decodeDataURL(uri string) ([]byte, error) {
 	parsedURL, err := url.Parse(uri)
-
 	if err != nil {
 		return nil, fmt.Errorf("error parsing pac url: %w", err)
 	}
@@ -127,17 +124,11 @@ func decodeDataURL(uri string) ([]byte, error) {
 }
 
 func (pf *pacFetcher) download() []byte {
-	// TODO: Combine pacChanged() and findPACURL() as described in
-	// https://github.com/samuong/alpaca/pull/156#issuecomment-3125070335
 	if !pf.monitor.addrsChanged() && !pf.pacFinder.pacChanged() {
 		return nil
 	}
 	pf.connected = false
 
-	// We've just detected a change in network state, so close any "idle"
-	// connections from the previous network. This forces a fresh DNS
-	// lookup and TCP dial during the next PAC download. For context, see
-	// <https://github.com/samuong/alpaca/issues/165>.
 	pf.client.CloseIdleConnections()
 
 	pacurl, err := pf.pacFinder.findPACURL()
@@ -164,17 +155,18 @@ func (pf *pacFetcher) download() []byte {
 
 	resp, err := requireOK(pf.client.Get(pacurl))
 	if err != nil {
-		// Sometimes, if we try to download too soon after a network change, the PAC
-		// download can fail. See https://github.com/samuong/alpaca/issues/8 for details.
 		log.Printf("Error downloading PAC file, will retry after %v: %q",
 			delayAfterFailedDownload, err)
+
 		time.Sleep(delayAfterFailedDownload)
+
 		if resp, err = requireOK(pf.client.Get(pacurl)); err != nil {
 			log.Printf("Error downloading PAC file, giving up: %q", err)
 			return nil
 		}
 	}
 	defer resp.Body.Close()
+
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, maxResponseBytes)
 	if err == io.EOF {

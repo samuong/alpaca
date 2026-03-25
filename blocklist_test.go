@@ -49,10 +49,10 @@ func TestBlocklistDuplicateEntry(t *testing.T) {
 	var now time.Time
 	b.now = func() time.Time { return now }
 	b.add("foo")
-	now = now.Add(3*time.Minute)
+	now = now.Add(3 * time.Minute)
 	b.add("foo")
-	now = now.Add(3*time.Minute)
+	now = now.Add(3 * time.Minute)
 	b.contains("foo")
-	now = now.Add(3*time.Minute)
+	now = now.Add(3 * time.Minute)
 	b.contains("foo")
 }
