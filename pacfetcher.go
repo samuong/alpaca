@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/sandrolain/httpcache"
-	"github.com/sandrolain/httpcache/diskcache"
 )
 
 const maxResponseBytes = 1 * 1024 * 1024
@@ -53,8 +52,8 @@ func newPACFetcher(pacurl string) *pacFetcher {
 		// Base transport without proxy (important: avoid proxy loop)
 		baseTransport := &http.Transport{Proxy: nil}
 
-		// Add HTTP caching
-		cacheTransport := httpcache.NewTransport(diskcache.New("cache"))
+		// ✅ Use in-memory cache (FIXED)
+		cacheTransport := httpcache.NewTransport(httpcache.NewMemoryCache())
 		cacheTransport.Transport = baseTransport
 
 		client = &http.Client{
@@ -146,7 +145,6 @@ func (pf *pacFetcher) download() []byte {
 		return pac
 	}
 
-	// Cached HTTP request (handled automatically by transport)
 	resp, err := requireOK(pf.client.Get(pacurl))
 	if err != nil {
 		log.Printf("Error downloading PAC file, will retry after %v: %q",
@@ -154,10 +152,9 @@ func (pf *pacFetcher) download() []byte {
 
 		time.Sleep(delayAfterFailedDownload)
 
-		// Retry once
 		if resp, err = requireOK(pf.client.Get(pacurl)); err != nil {
 			log.Printf("Error downloading PAC file, giving up: %q", err)
-			return nil // ❗ No fallback to cached PAC (correct behavior)
+			return nil
 		}
 	}
 	defer resp.Body.Close()
