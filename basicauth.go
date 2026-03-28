@@ -29,6 +29,8 @@ func newBasicAuthenticator(credentials string) *basicAuthenticator {
 	}
 }
 
+func (b *basicAuthenticator) scheme() string { return "Basic" }
+
 func (b *basicAuthenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
 	req.Header.Set("Proxy-Authorization", "Basic "+b.encoded)
 	return rt.RoundTrip(req)

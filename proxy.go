@@ -31,6 +31,10 @@ var tlsClientConfig *tls.Config
 
 type proxyAuthenticator interface {
 	do(req *http.Request, rt http.RoundTripper) (*http.Response, error)
+	// scheme returns the HTTP authentication scheme this authenticator
+	// handles (e.g. "Negotiate", "NTLM", "Basic"), matching the token
+	// the proxy sends in the Proxy-Authenticate response header.
+	scheme() string
 }
 
 type ProxyHandler struct {

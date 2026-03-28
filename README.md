@@ -58,13 +58,14 @@ Start Alpaca by running the `alpaca` binary.
 
 If the proxy server requires valid authentication credentials, you can provide them by means of:
 
-- basic proxy authentication, if `-b login:password` is passed,
+- basic proxy authentication, if `BASIC_CREDENTIALS=login:password` is set,
 - the shell prompt (for NTLM), if `-d` is passed,
 - the shell environment (for NTLM), if `NTLM_CREDENTIALS` is set,
 - the system keyring (macOS, Windows and Linux/GNOME supported), if none of the above applies.
 
 Multiple authentication methods can be enabled simultaneously. The multi-authenticator
-tries each method in order (Kerberos, Basic, NTLM) and caches which method works per proxy.
+selects methods based on the proxy's `Proxy-Authenticate` response header, trying them in
+order (Negotiate, NTLM, Basic) and caching which method works per proxy.
 
 Otherwise, the authentication with proxy will be simply ignored.
 

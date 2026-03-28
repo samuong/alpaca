@@ -73,7 +73,7 @@ Requests flow through a middleware chain built in `main.go:createServer`:
 ### Authentication Chain
 
 Authentication methods are tried in order via `multiauth.go`. The chain is:
-Kerberos/Negotiate → Basic → NTLM. The multi-authenticator caches which method works per proxy host.
+Negotiate → NTLM → Basic (matching Chrome's hierarchy). The multi-authenticator selects methods based on the proxy's `Proxy-Authenticate` response header and caches which method works per proxy host.
 
 ### Key Interfaces
 
@@ -173,7 +173,6 @@ Triggered on tags matching `v*`. Creates a GitHub release and uploads platform-s
 | `-C`        | (none)       | PAC file URL override                          |
 | `-d`        | (none)       | NTLM domain                                    |
 | `-u`        | current user | Username for proxy auth (NTLM)                 |
-| `-b`        | (none)       | `login:password` for basic proxy auth           |
 | `-H`        | false        | Print hashed NTLM credentials and exit         |
 | `-k`        | false        | Enable Kerberos/Negotiate authentication (macOS)|
 | `-w`        | `30`         | Kerberos ticket wait time in seconds (macOS)   |

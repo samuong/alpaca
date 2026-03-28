@@ -60,7 +60,6 @@ func main() {
 	pacurl := flag.String("C", "", "url of proxy auto-config (pac) file")
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
 	username := flag.String("u", whoAmI(), "username for proxy auth (NTLM)")
-	basicCreds := flag.String("b", "", "login:password for basic proxy auth")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
 	kerberos := flag.Bool("k", false, "enable Kerberos/Negotiate proxy authentication (macOS only)")
 	kerberosWait := flag.Int("w", 30, "seconds to wait for a Kerberos ticket (macOS only)")
@@ -85,8 +84,8 @@ func main() {
 	var basicAuth *basicAuthenticator
 	var a *authenticator
 
-	if *basicCreds != "" {
-		basicAuth = newBasicAuthenticator(*basicCreds)
+	if value := os.Getenv("BASIC_CREDENTIALS"); value != "" {
+		basicAuth = newBasicAuthenticator(value)
 		log.Println("Basic proxy authentication configured")
 	}
 
@@ -117,9 +116,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Build auth chain: Kerberos → Basic → NTLM.
-	// The multi-authenticator tries each method in order on 407 and caches
-	// which method works for each proxy host.
+	// Build auth chain: Negotiate → NTLM → Basic (matches Chrome's hierarchy;
+	// Basic has the lowest security score because it sends credentials unencrypted).
 	var methods []proxyAuthenticator
 	if *kerberos {
 		if neg := newNegotiateAuthenticator(*kerberosWait); neg != nil {
@@ -127,11 +125,11 @@ func main() {
 			methods = append(methods, neg)
 		}
 	}
-	if basicAuth != nil {
-		methods = append(methods, basicAuth)
-	}
 	if a != nil {
 		methods = append(methods, a)
+	}
+	if basicAuth != nil {
+		methods = append(methods, basicAuth)
 	}
 	auth := newMultiAuthenticator(methods...)
 

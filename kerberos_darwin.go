@@ -194,6 +194,8 @@ func generateSPNEGOToken(proxyHost string) ([]byte, error) {
 	return C.GoBytes(tokenData, C.int(tokenLen)), nil
 }
 
+func (n *negotiateAuthenticator) scheme() string { return "Negotiate" }
+
 // do performs Negotiate/SPNEGO proxy authentication. It generates a SPNEGO
 // token for the upstream proxy and sends the request with a
 // Proxy-Authorization: Negotiate header.
