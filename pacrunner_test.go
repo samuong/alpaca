@@ -15,16 +15,31 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/robertkrimen/otto"
+	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func toJSArg(arg interface{}) string {
+	switch v := arg.(type) {
+	case string:
+		b, _ := json.Marshal(v)
+		return string(b)
+	case int, int8, int16, int32, int64, float32, float64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%v", v)
+	default:
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
+}
 
 func TestDirect(t *testing.T) {
 	var pr PACRunner
@@ -68,12 +83,11 @@ func TestIsPlainHostName(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
-			vm := otto.New()
+			vm := goja.New()
 			require.NoError(t, vm.Set("isPlainHostName", isPlainHostName))
-			value, err := vm.Call("isPlainHostName", nil, test.host)
+			value, err := vm.RunString("isPlainHostName(" + fmt.Sprintf("%q", test.host) + ")")
 			require.NoError(t, err)
-			actual, err := value.ToBoolean()
-			require.NoError(t, err)
+			actual := value.ToBoolean()
 			assert.Equal(t, test.expected, actual)
 		})
 	}
@@ -91,12 +105,11 @@ func TestDnsDomainIs(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.host+" "+test.domain, func(t *testing.T) {
-			vm := otto.New()
+			vm := goja.New()
 			require.NoError(t, vm.Set("dnsDomainIs", dnsDomainIs))
-			value, err := vm.Call("dnsDomainIs", nil, test.host, test.domain)
+			value, err := vm.RunString("dnsDomainIs(" + fmt.Sprintf("%q", test.host) + ", " + fmt.Sprintf("%q", test.domain) + ")")
 			require.NoError(t, err)
-			actual, err := value.ToBoolean()
-			require.NoError(t, err)
+			actual := value.ToBoolean()
 			assert.Equal(t, test.expected, actual)
 		})
 	}
@@ -116,12 +129,11 @@ func TestLocalHostOrDomainIs(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			vm := otto.New()
+			vm := goja.New()
 			require.NoError(t, vm.Set("localHostOrDomainIs", localHostOrDomainIs))
-			value, err := vm.Call("localHostOrDomainIs", nil, test.host, test.hostdom)
+			value, err := vm.RunString("localHostOrDomainIs(" + fmt.Sprintf("%q", test.host) + ", " + fmt.Sprintf("%q", test.hostdom) + ")")
 			require.NoError(t, err)
-			actual, err := value.ToBoolean()
-			require.NoError(t, err)
+			actual := value.ToBoolean()
 			assert.Equal(t, test.expected, actual)
 		})
 	}
@@ -137,12 +149,11 @@ func TestIsResolvable(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
-			vm := otto.New()
+			vm := goja.New()
 			require.NoError(t, vm.Set("isResolvable", isResolvable))
-			value, err := vm.Call("isResolvable", nil, test.host)
+			value, err := vm.RunString("isResolvable(" + fmt.Sprintf("%q", test.host) + ")")
 			require.NoError(t, err)
-			actual, err := value.ToBoolean()
-			require.NoError(t, err)
+			actual := value.ToBoolean()
 			assert.Equal(t, test.expected, actual)
 		})
 	}
@@ -163,12 +174,11 @@ func TestIsInNet(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
-			vm := otto.New()
+			vm := goja.New()
 			require.NoError(t, vm.Set("isInNet", isInNet))
-			value, err := vm.Call("isInNet", nil, test.host, test.pattern, test.mask)
+			value, err := vm.RunString("isInNet(" + fmt.Sprintf("%q", test.host) + ", " + fmt.Sprintf("%q", test.pattern) + ", " + fmt.Sprintf("%q", test.mask) + ")")
 			require.NoError(t, err)
-			actual, err := value.ToBoolean()
-			require.NoError(t, err)
+			actual := value.ToBoolean()
 			assert.Equal(t, test.expected, actual)
 		})
 	}
@@ -184,12 +194,11 @@ func TestDnsResolve(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
-			vm := otto.New()
+			vm := goja.New()
 			require.NoError(t, vm.Set("dnsResolve", dnsResolve))
-			value, err := vm.Call("dnsResolve", nil, test.host)
+			value, err := vm.RunString("dnsResolve(" + fmt.Sprintf("%q", test.host) + ")")
 			require.NoError(t, err)
-			actual, err := value.ToString()
-			require.NoError(t, err)
+			actual := value.Export().(string)
 			assert.Equal(t, test.expected, actual)
 		})
 	}
@@ -206,33 +215,28 @@ func TestConvertAddr(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.ipaddr, func(t *testing.T) {
-			vm := otto.New()
+			vm := goja.New()
 			require.NoError(t, vm.Set("convert_addr", convertAddr))
-			value, err := vm.Call("convert_addr", nil, test.ipaddr)
+			value, err := vm.RunString("convert_addr(" + fmt.Sprintf("%q", test.ipaddr) + ")")
 			require.NoError(t, err)
-			actual, err := value.ToInteger()
-			require.NoError(t, err)
+			actual := value.ToInteger()
 			assert.Equal(t, test.expected, actual)
 		})
 	}
 }
 
 func TestMyIpAddress(t *testing.T) {
-	vm := otto.New()
+	vm := goja.New()
 	require.NoError(t, vm.Set("myIpAddress", myIpAddress))
-	value, err := vm.Call("myIpAddress", nil)
+	value, err := vm.RunString("myIpAddress()")
 	require.NoError(t, err)
-	output, err := value.ToString()
-	require.NoError(t, err)
-	// Check it's a valid IPv4 or IPv6 address.
-	assert.NotNil(t, net.ParseIP(output))
-	// Check that it's our IP address. Technically there's a race condition here (since both
-	// myIpAddress and this function will call net.InterfaceAddrs() separately), but this is
-	// only going to cause flakiness if the network changes during the test, which is unlikely.
+	output := value.ToString()
+	actualOutput := output.Export().(string)
+	assert.NotNil(t, net.ParseIP(actualOutput))
 	addrs, err := net.InterfaceAddrs()
 	require.NoError(t, err)
 	for _, addr := range addrs {
-		if strings.HasPrefix(addr.String(), output) {
+		if strings.HasPrefix(addr.String(), actualOutput) {
 			return
 		}
 	}
@@ -250,12 +254,11 @@ func TestDnsDomainLevels(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.host, func(t *testing.T) {
-			vm := otto.New()
+			vm := goja.New()
 			require.NoError(t, vm.Set("dnsDomainLevels", dnsDomainLevels))
-			value, err := vm.Call("dnsDomainLevels", nil, test.host)
+			value, err := vm.RunString("dnsDomainLevels(" + fmt.Sprintf("%q", test.host) + ")")
 			require.NoError(t, err)
-			actual, err := value.ToInteger()
-			require.NoError(t, err)
+			actual := value.ToInteger()
 			assert.Equal(t, test.expected, actual)
 		})
 	}
@@ -271,12 +274,11 @@ func TestShExpMatch(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.str+" "+test.shexp, func(t *testing.T) {
-			vm := otto.New()
+			vm := goja.New()
 			require.NoError(t, vm.Set("shExpMatch", shExpMatch))
-			value, err := vm.Call("shExpMatch", nil, test.str, test.shexp)
+			value, err := vm.RunString("shExpMatch(" + fmt.Sprintf("%q", test.str) + ", " + fmt.Sprintf("%q", test.shexp) + ")")
 			require.NoError(t, err)
-			actual, err := value.ToBoolean()
-			require.NoError(t, err)
+			actual := value.ToBoolean()
 			assert.Equal(t, test.expected, actual)
 		})
 	}
@@ -314,15 +316,18 @@ func TestWeekdayRange(t *testing.T) {
 	for _, test := range tests {
 		for i, weekday := range weekdays {
 			t.Run(test.name+" "+weekday.name, func(t *testing.T) {
-				vm := otto.New()
-				f := func(fc otto.FunctionCall) otto.Value {
+				vm := goja.New()
+				f := func(fc goja.FunctionCall) goja.Value {
 					return weekdayRange(fc, weekday.t)
 				}
 				require.NoError(t, vm.Set("weekdayRange", f))
-				value, err := vm.Call("weekdayRange", nil, test.args...)
+				args := make([]string, len(test.args))
+				for j, arg := range test.args {
+					args[j] = toJSArg(arg)
+				}
+				value, err := vm.RunString("weekdayRange(" + strings.Join(args, ", ") + ")")
 				require.NoError(t, err)
-				actual, err := value.ToBoolean()
-				require.NoError(t, err)
+				actual := value.ToBoolean()
 				expected := test.expectations[i] == 'Y'
 				assert.Equal(t, expected, actual)
 			})
@@ -444,15 +449,18 @@ func TestDateRange(t *testing.T) {
 	}
 
 	check := func(t *testing.T, args []interface{}, date string, expected bool) {
-		vm := otto.New()
+		vm := goja.New()
 		now, err := time.Parse(time.RFC3339, date+"T05:00:00+10:00")
 		require.NoError(t, err)
-		f := func(fc otto.FunctionCall) otto.Value { return dateRange(fc, now) }
+		f := func(fc goja.FunctionCall) goja.Value { return dateRange(fc, now) }
 		require.NoError(t, vm.Set("dateRange", f))
-		value, err := vm.Call("dateRange", nil, args...)
+		argsStr := make([]string, len(args))
+		for i, arg := range args {
+			argsStr[i] = toJSArg(arg)
+		}
+		value, err := vm.RunString("dateRange(" + strings.Join(argsStr, ", ") + ")")
 		require.NoError(t, err)
-		actual, err := value.ToBoolean()
-		require.NoError(t, err)
+		actual := value.ToBoolean()
 		assert.Equal(t, expected, actual)
 	}
 
@@ -537,15 +545,18 @@ func TestTimeRange(t *testing.T) {
 	}
 
 	check := func(t *testing.T, args []interface{}, mocktime string, expected bool) {
-		vm := otto.New()
+		vm := goja.New()
 		now, err := time.Parse(time.RFC3339, "2019-07-01T"+mocktime+"+10:00")
 		require.NoError(t, err)
-		f := func(fc otto.FunctionCall) otto.Value { return timeRange(fc, now) }
+		f := func(fc goja.FunctionCall) goja.Value { return timeRange(fc, now) }
 		require.NoError(t, vm.Set("timeRange", f))
-		value, err := vm.Call("timeRange", nil, args...)
+		argsStr := make([]string, len(args))
+		for i, arg := range args {
+			argsStr[i] = toJSArg(arg)
+		}
+		value, err := vm.RunString("timeRange(" + strings.Join(argsStr, ", ") + ")")
 		require.NoError(t, err)
-		actual, err := value.ToBoolean()
-		require.NoError(t, err)
+		actual := value.ToBoolean()
 		assert.Equal(t, expected, actual)
 	}
 
