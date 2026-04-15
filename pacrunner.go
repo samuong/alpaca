@@ -16,7 +16,7 @@ package main
 
 import (
 	"encoding/binary"
-	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -24,21 +24,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dop251/goja"
 	"github.com/gobwas/glob"
-	"github.com/robertkrimen/otto"
 )
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file
 
+var pacVM *goja.Runtime
+
 type PACRunner struct {
-	vm *otto.Otto
-	sync.Mutex
+	vm    *goja.Runtime
+	mutex sync.Mutex
 }
 
 func (pr *PACRunner) Update(pacjs []byte) error {
-	vm := otto.New()
+	vm := goja.New()
 	var err error
-	set := func(name string, handler func(otto.FunctionCall) otto.Value) {
+	set := func(name string, handler func(goja.FunctionCall) goja.Value) {
 		if err != nil {
 			return
 		}
@@ -55,87 +57,76 @@ func (pr *PACRunner) Update(pacjs []byte) error {
 	set("myIpAddressEx", myIpAddressEx)
 	set("dnsDomainLevels", dnsDomainLevels)
 	set("shExpMatch", shExpMatch)
-	set("weekdayRange", func(fc otto.FunctionCall) otto.Value {
+	set("weekdayRange", func(fc goja.FunctionCall) goja.Value {
 		return weekdayRange(fc, time.Now())
 	})
-	set("dateRange", func(fc otto.FunctionCall) otto.Value {
+	set("dateRange", func(fc goja.FunctionCall) goja.Value {
 		return dateRange(fc, time.Now())
 	})
-	set("timeRange", func(fc otto.FunctionCall) otto.Value {
+	set("timeRange", func(fc goja.FunctionCall) goja.Value {
 		return timeRange(fc, time.Now())
 	})
 	if err != nil {
 		return err
 	}
-	_, err = vm.Run(pacjs)
+	_, err = vm.RunString(string(pacjs))
 	if err != nil {
 		return err
 	}
+	pr.mutex.Lock()
 	pr.vm = vm
+	pacVM = vm
+	pr.mutex.Unlock()
 	return nil
 }
 
 func (pr *PACRunner) FindProxyForURL(u url.URL) (string, error) {
-	pr.Lock()
-	defer pr.Unlock()
+	pr.mutex.Lock()
+	defer pr.mutex.Unlock()
 	if u.Scheme == "" {
-		// When a net/http Server parses a CONNECT request, the URL will
-		// have no Scheme. In that case, assume the scheme is "https".
 		u.Scheme = "https"
 	}
 	if u.Scheme == "https" || u.Scheme == "wss" {
-		// Strip the path and query components of https:// URLs.
-		// https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_(PAC)_file#Parameters
-		// Like Chrome, also strip the path and query for wss:// URLs (secure WebSockets).
-		// https://cs.chromium.org/chromium/src/net/proxy_resolution/proxy_resolution_service.cc?rcl=fba6691ffca770dd0c916418601b9c9c019a2929&l=383
-		// It also seems like a good idea to strip the fragment, so do that too.
 		u.Path = "/"
 		u.RawPath = "/"
 		u.RawQuery = ""
 		u.Fragment = ""
 	}
-	val, err := pr.vm.Call("FindProxyForURL", nil, u.String(), u.Hostname())
+	val, err := pr.vm.RunString("FindProxyForURL(" + fmt.Sprintf("%q", u.String()) + ", " + fmt.Sprintf("%q", u.Hostname()) + ")")
 	if err != nil {
 		return "", err
-	} else if !val.IsString() {
-		return "", errors.New("FindProxyForURL didn't return a string")
 	}
-	return val.String(), nil
+	return val.Export().(string), nil
 }
 
-func toValue(unwrapped interface{}) otto.Value {
-	wrapped, err := otto.ToValue(unwrapped)
-	if err != nil {
-		return otto.UndefinedValue()
-	} else {
-		return wrapped
-	}
+func toValue(unwrapped interface{}) goja.Value {
+	return pacVM.ToValue(unwrapped)
 }
 
-func isPlainHostName(call otto.FunctionCall) otto.Value {
+func isPlainHostName(call goja.FunctionCall) goja.Value {
 	host := call.Argument(0).String()
 	return toValue(!strings.ContainsRune(host, '.'))
 }
 
-func dnsDomainIs(call otto.FunctionCall) otto.Value {
+func dnsDomainIs(call goja.FunctionCall) goja.Value {
 	host := call.Argument(0).String()
 	domain := call.Argument(1).String()
 	return toValue(strings.HasSuffix(host, domain))
 }
 
-func localHostOrDomainIs(call otto.FunctionCall) otto.Value {
+func localHostOrDomainIs(call goja.FunctionCall) goja.Value {
 	host := call.Argument(0).String()
 	hostdom := call.Argument(1).String()
 	return toValue(host == hostdom || strings.HasPrefix(hostdom, host+"."))
 }
 
-func isResolvable(call otto.FunctionCall) otto.Value {
+func isResolvable(call goja.FunctionCall) goja.Value {
 	host := call.Argument(0).String()
 	_, err := net.LookupHost(host)
 	return toValue(err == nil)
 }
 
-func isInNet(call otto.FunctionCall) otto.Value {
+func isInNet(call goja.FunctionCall) goja.Value {
 	host := call.Argument(0).String()
 	pattern := call.Argument(1).String()
 	mask := call.Argument(2).String()
@@ -150,7 +141,7 @@ func isInNet(call otto.FunctionCall) otto.Value {
 	return toValue(maskedIP.Equal(maskedPattern))
 }
 
-func dnsResolve(call otto.FunctionCall) otto.Value {
+func dnsResolve(call goja.FunctionCall) goja.Value {
 	host := call.Argument(0).String()
 	return toValue(resolve(host).String())
 }
@@ -174,7 +165,7 @@ func resolve(host string) net.IP {
 	return nil
 }
 
-func convertAddr(call otto.FunctionCall) otto.Value {
+func convertAddr(call goja.FunctionCall) goja.Value {
 	ipaddr := call.Argument(0).String()
 	ipv4 := net.ParseIP(ipaddr).To4()
 	if ipv4 == nil {
@@ -183,8 +174,7 @@ func convertAddr(call otto.FunctionCall) otto.Value {
 	return toValue(binary.BigEndian.Uint32(ipv4))
 }
 
-func myIpAddress(_ otto.FunctionCall) otto.Value {
-	// https://chromium.googlesource.com/chromium/src/+/ee43fa5328856129f46566b2ea1be5811739681c/net/docs/proxy.md#Resolving-client_s-IP-address-within-a-PAC-script-using-myIpAddress
+func myIpAddress(call goja.FunctionCall) goja.Value {
 	if localAddr := probeRoute("8.8.8.8"); localAddr != "" {
 		return toValue(localAddr)
 	}
@@ -200,8 +190,7 @@ func myIpAddress(_ otto.FunctionCall) otto.Value {
 	return toValue("127.0.0.1")
 }
 
-func myIpAddressEx(_ otto.FunctionCall) otto.Value {
-	// https://chromium.googlesource.com/chromium/src/+/ee43fa5328856129f46566b2ea1be5811739681c/net/docs/proxy.md#resolving-client_s-ip-address-within-a-pac-script-using-myipaddressex
+func myIpAddressEx(call goja.FunctionCall) goja.Value {
 	public := []string{"8.8.8.8", "2001:4860:4860::8888"}
 	if ips := probeRoutes(public); ips != "" {
 		return toValue(ips)
@@ -281,23 +270,23 @@ func resolveHostname(ipv6 bool) []net.IP {
 	return addrs
 }
 
-func dnsDomainLevels(call otto.FunctionCall) otto.Value {
+func dnsDomainLevels(call goja.FunctionCall) goja.Value {
 	host := call.Argument(0).String()
 	return toValue(strings.Count(host, "."))
 }
 
-func shExpMatch(call otto.FunctionCall) otto.Value {
+func shExpMatch(call goja.FunctionCall) goja.Value {
 	str := call.Argument(0).String()
 	shexp := call.Argument(1).String()
 	g, err := glob.Compile(shexp)
 	if err != nil {
-		return otto.UndefinedValue()
+		return goja.Undefined()
 	}
 	return toValue(g.Match(str))
 }
 
-func weekdayRange(call otto.FunctionCall, now time.Time) otto.Value {
-	if call.Argument(len(call.ArgumentList)-1).String() == "GMT" {
+func weekdayRange(call goja.FunctionCall, now time.Time) goja.Value {
+	if call.Argument(len(call.Arguments)-1).String() == "GMT" {
 		now = now.In(time.UTC)
 	}
 	weekdays := map[string]time.Weekday{
@@ -306,7 +295,7 @@ func weekdayRange(call otto.FunctionCall, now time.Time) otto.Value {
 	}
 	wd1, ok := weekdays[call.Argument(0).String()]
 	if !ok {
-		return otto.UndefinedValue()
+		return goja.Undefined()
 	}
 	wd2, ok := weekdays[call.Argument(1).String()]
 	if !ok {
@@ -318,8 +307,8 @@ func weekdayRange(call otto.FunctionCall, now time.Time) otto.Value {
 	}
 }
 
-func dateRange(call otto.FunctionCall, now time.Time) otto.Value {
-	argc := len(call.ArgumentList)
+func dateRange(call goja.FunctionCall, now time.Time) goja.Value {
+	argc := len(call.Arguments)
 	if call.Argument(argc-1).String() == "GMT" {
 		now = now.In(time.UTC)
 		argc--
@@ -337,36 +326,51 @@ func dateRange(call otto.FunctionCall, now time.Time) otto.Value {
 	}
 
 	for i := 0; i < argc; i++ {
-		if call.Argument(i).IsNumber() {
-			n, err := call.Argument(i).ToInteger()
-			if err != nil {
-				return otto.UndefinedValue()
-			} else if 1 <= n && n <= 31 {
+		arg := call.Argument(i)
+		exported := arg.Export()
+		switch v := exported.(type) {
+		case float64:
+			n := int64(v)
+			if 1 <= n && n <= 31 {
 				days = append(days, int(n))
 			} else {
 				years = append(years, int(n))
 			}
-		} else if month, ok := monthmap[call.Argument(i).String()]; ok {
-			months = append(months, month)
-		} else {
-			return otto.UndefinedValue()
+		case int64:
+			n := v
+			if 1 <= n && n <= 31 {
+				days = append(days, int(n))
+			} else {
+				years = append(years, int(n))
+			}
+		case int:
+			n := int64(v)
+			if 1 <= n && n <= 31 {
+				days = append(days, int(n))
+			} else {
+				years = append(years, int(n))
+			}
+		default:
+			if month, ok := monthmap[arg.String()]; ok {
+				months = append(months, month)
+			} else {
+				return goja.Undefined()
+			}
 		}
 	}
 
 	switch max(len(days), len(months), len(years)) {
 	case 1:
-		// One (possibly partial) date provided; match it against the current date.
 		if len(days) == 1 && days[0] != now.Day() {
-			return otto.FalseValue()
+			return toValue(false)
 		} else if len(months) == 1 && months[0] != now.Month() {
-			return otto.FalseValue()
+			return toValue(false)
 		} else if len(years) == 1 && years[0] != now.Year() {
-			return otto.FalseValue()
+			return toValue(false)
 		} else {
-			return otto.TrueValue()
+			return toValue(true)
 		}
 	case 2:
-		// Two dates provided; check that the current date is inside the range.
 		y1, m1, d1 := now.Date()
 		y2, m2, d2 := now.Date()
 		if len(days) == 2 {
@@ -384,8 +388,7 @@ func dateRange(call otto.FunctionCall, now time.Time) otto.Value {
 		end := time.Date(y2, m2, d2, h, m, s, ns, loc)
 		return toValue(!start.After(now) && !end.Before(now))
 	default:
-		// Zero, three or more dates provided. Something's wrong.
-		return otto.UndefinedValue()
+		return goja.Undefined()
 	}
 }
 
@@ -399,20 +402,15 @@ func max(a, b, c int) int {
 	}
 }
 
-func timeRange(call otto.FunctionCall, now time.Time) otto.Value {
-	argc := len(call.ArgumentList)
+func timeRange(call goja.FunctionCall, now time.Time) goja.Value {
+	argc := len(call.Arguments)
 	if call.Argument(argc-1).String() == "GMT" {
 		now = now.In(time.UTC)
 		argc--
 	}
 	h1, m1, s1, h2, m2, s2 := 0, 0, 0, 0, 0, 0
-	var err error
 	toInt := func(idx int) int {
-		val, err2 := call.Argument(idx).ToInteger()
-		if err2 != nil {
-			err = err2
-		}
-		return int(val)
+		return int(call.Argument(idx).ToInteger())
 	}
 	switch argc {
 	case 1:
@@ -428,10 +426,7 @@ func timeRange(call otto.FunctionCall, now time.Time) otto.Value {
 		h1, m1, s1 = toInt(0), toInt(1), toInt(2)
 		h2, m2, s2 = toInt(3), toInt(4), toInt(5)
 	default:
-		return otto.UndefinedValue()
-	}
-	if err != nil {
-		return otto.UndefinedValue()
+		return goja.Undefined()
 	}
 	start := time.Date(now.Year(), now.Month(), now.Day(), h1, m1, s1, 0, now.Location())
 	end := time.Date(now.Year(), now.Month(), now.Day(), h2, m2, s2, 0, now.Location())
