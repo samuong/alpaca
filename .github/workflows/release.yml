@@ -48,16 +48,16 @@ jobs:
             goos: 'windows'
             goarch: 'amd64'
             ext: '.exe'
-        go: [ '1.22' ]
+        go: [ '1.25' ]
 
     runs-on: ${{ matrix.target.os }}
 
     needs: [ release ]
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
 

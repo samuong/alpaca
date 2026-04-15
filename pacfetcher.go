@@ -80,7 +80,7 @@ func requireOK(resp *http.Response, err error) (*http.Response, error) {
 	if err != nil {
 		return resp, err
 	} else if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("expected status 200 OK, got %s", resp.Status)
 	} else {
 		return resp, nil
@@ -174,7 +174,7 @@ func (pf *pacFetcher) download() []byte {
 			return nil
 		}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, maxResponseBytes)
 	if err == io.EOF {

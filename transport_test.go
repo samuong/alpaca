@@ -35,14 +35,14 @@ func TestTransport(t *testing.T) {
 	defer server.Close()
 	var tr transport
 	require.NoError(t, tr.dial(&url.URL{Host: server.Listener.Addr().String()}))
-	defer tr.Close()
+	defer tr.Close() //nolint:errcheck
 	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
 	require.NoError(t, err)
 
 	t.Run("RoundTrip", func(t *testing.T) {
 		resp, err := tr.RoundTrip(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
@@ -51,11 +51,11 @@ func TestTransport(t *testing.T) {
 
 	t.Run("Hijack", func(t *testing.T) {
 		conn := tr.hijack()
-		defer conn.Close()
+		defer conn.Close() //nolint:errcheck
 		require.NoError(t, req.Write(conn))
 		resp, err := http.ReadResponse(bufio.NewReader(conn), req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
@@ -69,18 +69,18 @@ func TestTransportErrors(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "http://alpaca.test", nil)
 	require.NoError(t, err)
 
-	t.Run("NotConnected", func (t *testing.T) {
+	t.Run("NotConnected", func(t *testing.T) {
 		_, err = tr.RoundTrip(req)
 		assert.Error(t, err)
 	})
 
-	t.Run("Closed", func (t *testing.T) {
+	t.Run("Closed", func(t *testing.T) {
 		require.NoError(t, tr.Close())
 		_, err = tr.RoundTrip(req)
 		assert.Error(t, err)
 	})
 
-	t.Run("CloseTwice", func (t *testing.T) {
+	t.Run("CloseTwice", func(t *testing.T) {
 		assert.NoError(t, tr.Close())
 		assert.NoError(t, tr.Close())
 	})

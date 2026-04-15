@@ -120,7 +120,7 @@ func TestPacFromFilesystem(t *testing.T) {
 	content := []byte(`function FindProxyForURL(url, host) { return "DIRECT" }`)
 	tempdir, err := os.MkdirTemp("", "alpaca")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempdir)
+	defer os.RemoveAll(tempdir) //nolint:errcheck
 	pacPath := path.Join(tempdir, "test.pac")
 	require.NoError(t, os.WriteFile(pacPath, content, 0644))
 	pacURL := &url.URL{Scheme: "file", Path: filepath.ToSlash(pacPath)}
