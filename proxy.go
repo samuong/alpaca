@@ -29,15 +29,23 @@ import (
 
 var tlsClientConfig *tls.Config
 
+type proxyAuthenticator interface {
+	do(req *http.Request, rt http.RoundTripper) (*http.Response, error)
+	// scheme returns the HTTP authentication scheme this authenticator
+	// handles (e.g. "Negotiate", "NTLM", "Basic"), matching the token
+	// the proxy sends in the Proxy-Authenticate response header.
+	scheme() string
+}
+
 type ProxyHandler struct {
 	transport *http.Transport
-	auth      *authenticator
+	auth      proxyAuthenticator
 	block     func(string)
 }
 
 type proxyFunc func(*http.Request) (*url.URL, error)
 
-func NewProxyHandler(auth *authenticator, proxy proxyFunc, block func(string)) ProxyHandler {
+func NewProxyHandler(auth proxyAuthenticator, proxy proxyFunc, block func(string)) ProxyHandler {
 	tr := &http.Transport{Proxy: proxy, TLSClientConfig: tlsClientConfig}
 	return ProxyHandler{tr, auth, block}
 }
@@ -144,7 +152,7 @@ func connectDirect(req *http.Request) (net.Conn, error) {
 	return server, err
 }
 
-func connectViaProxy(req *http.Request, proxy *url.URL, auth *authenticator) (net.Conn, error) {
+func connectViaProxy(req *http.Request, proxy *url.URL, auth proxyAuthenticator) (net.Conn, error) {
 	id := req.Context().Value(contextKeyID)
 	var tr transport
 	defer tr.Close() //nolint:errcheck
@@ -176,7 +184,7 @@ func connectViaProxy(req *http.Request, proxy *url.URL, auth *authenticator) (ne
 	return tr.hijack(), nil
 }
 
-func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth *authenticator) {
+func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, auth proxyAuthenticator) {
 	// Make a copy of the request body, in case we have to replay it (for authentication)
 	var buf bytes.Buffer
 	id := req.Context().Value(contextKeyID)

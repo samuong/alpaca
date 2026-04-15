@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -58,10 +59,17 @@ func main() {
 	port := flag.Int("p", 3128, "port number to listen on")
 	pacurl := flag.String("C", "", "url of proxy auto-config (pac) file")
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
-	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
+	username := flag.String("u", whoAmI(), "username for proxy auth (NTLM)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
+	kerberos := flag.Bool("k", false, "enable Kerberos/Negotiate proxy authentication (macOS only)")
+	kerberosWait := flag.Int("w", 30, "seconds to wait for a Kerberos ticket (macOS only)")
+	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
 	version := flag.Bool("version", false, "print version number")
 	flag.Parse()
+
+	if *quiet {
+		log.SetOutput(io.Discard)
+	}
 
 	// default to localhost if no hosts are specified
 	if len(hosts) == 0 {
@@ -73,6 +81,15 @@ func main() {
 		os.Exit(0)
 	}
 
+	var basicAuth *basicAuthenticator
+	var a *authenticator
+
+	if value := os.Getenv("BASIC_CREDENTIALS"); value != "" {
+		basicAuth = newBasicAuthenticator(value)
+		log.Println("Basic proxy authentication configured")
+	}
+
+	// NTLM credential sources
 	var src credentialSource
 	if *domain != "" {
 		src = fromTerminal().forUser(*domain, *username)
@@ -81,8 +98,6 @@ func main() {
 	} else {
 		src = fromKeyring()
 	}
-
-	var a *authenticator
 	if src != nil {
 		var err error
 		a, err = src.getCredentials()
@@ -101,9 +116,26 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Build auth chain: Negotiate → NTLM → Basic (matches Chrome's hierarchy;
+	// Basic has the lowest security score because it sends credentials unencrypted).
+	var methods []proxyAuthenticator
+	if *kerberos {
+		if neg := newNegotiateAuthenticator(*kerberosWait); neg != nil {
+			log.Println("Kerberos/Negotiate authentication available")
+			methods = append(methods, neg)
+		}
+	}
+	if a != nil {
+		methods = append(methods, a)
+	}
+	if basicAuth != nil {
+		methods = append(methods, basicAuth)
+	}
+	auth := newMultiAuthenticator(methods...)
+
 	errch := make(chan error)
 
-	s := createServer(*port, *pacurl, a)
+	s := createServer(*port, *pacurl, auth)
 	for _, host := range hosts {
 		address := net.JoinHostPort(host, strconv.Itoa(*port))
 		for _, network := range networks(host) {
@@ -122,10 +154,10 @@ func main() {
 	log.Fatal(<-errch)
 }
 
-func createServer(port int, pacurl string, a *authenticator) *http.Server {
+func createServer(port int, pacurl string, auth proxyAuthenticator) *http.Server {
 	pacWrapper := NewPACWrapper(PACData{Port: port})
 	proxyFinder := NewProxyFinder(pacurl, pacWrapper)
-	proxyHandler := NewProxyHandler(a, getProxyFromContext, proxyFinder.blockProxy)
+	proxyHandler := NewProxyHandler(auth, getProxyFromContext, proxyFinder.blockProxy)
 	mux := http.NewServeMux()
 	pacWrapper.SetupHandlers(mux)
 
