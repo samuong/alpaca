@@ -57,5 +57,5 @@ func TestPACServe(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, body, pac)
 	assert.Contains(t, body, `"DIRECT" : "PROXY localhost:1234"`)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
