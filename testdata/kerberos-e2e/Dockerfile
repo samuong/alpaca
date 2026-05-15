@@ -27,7 +27,10 @@
 # All identifiers are deliberately fictitious. Nothing here is bound to
 # any real organisation.
 
-FROM debian:bookworm-slim
+# Pinned by digest as defence-in-depth against compromised registry
+# mirrors. Refresh with `docker pull debian:bookworm-slim` then update
+# the digest below.
+FROM debian:bookworm-slim@sha256:67b30a61dc87758f0caf819646104f29ecbda97d920aaf5edc834128ac8493d3
 
 # Build-time proxy support — when building from behind a corporate proxy,
 # pass --build-arg HTTP_PROXY=... HTTPS_PROXY=... and apt-get will use it.

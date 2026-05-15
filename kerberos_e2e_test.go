@@ -48,6 +48,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -56,31 +57,38 @@ import (
 )
 
 const (
-	imageTag       = "alpaca-kerberos-e2e:dev"
-	containerName  = "alpaca-kerberos-e2e"
-	realm          = "EXAMPLE.TEST"
-	proxyHost      = "proxy.example.test"
-	kdcHost        = "kdc.example.test"
-	userPrinc      = "alice@" + realm
-	userPassword   = "alicepw"
-	basicUser      = "bob"
-	basicPassword  = "bobpw"
+	imageTag      = "alpaca-kerberos-e2e:dev"
+	containerName = "alpaca-kerberos-e2e"
+	// All identifiers below are deliberately fictitious. EXAMPLE.TEST
+	// and *.example.test are reserved for testing per RFC 6761; the
+	// principals and passwords are baked into the test fixture and
+	// are NOT real credentials.
+	realm         = "EXAMPLE.TEST"
+	proxyHost     = "proxy.example.test"
+	kdcHost       = "kdc.example.test"
+	userPrinc     = "alice@" + realm
+	userPassword  = "alicepw"
+	basicUser     = "bob"
+	basicPassword = "bobpw"
+	// upstreamBody is what the in-container Python http.server returns
+	// for /. Asserted by every successful e2e sub-test so that a squid
+	// misconfiguration returning its own 200 page would not silently
+	// pass.
+	upstreamBody = "ok\n"
 )
 
 // e2eFixture wraps a running test container and exposes the host-side
 // ports that the test needs to dial. It also remembers the temporary
 // krb5.conf and credential cache so they're cleaned up on teardown.
 type e2eFixture struct {
-	t              *testing.T
-	dockerBin      string
-	proxyHostPort  string // e.g. 127.0.0.1:53128
-	kdcHostPort    string // e.g. 127.0.0.1:50088
-	upstreamURL    string // URL squid will fetch and that returns 200 OK
-	tempDir        string
-	krb5ConfPath   string
-	credCachePath  string
-	originalKRB5   string
-	originalKRB5CC string
+	t             *testing.T
+	dockerBin     string
+	proxyHostPort string // e.g. 127.0.0.1:53128
+	kdcHostPort   string // e.g. 127.0.0.1:50088
+	upstreamURL   string // URL squid will fetch and that returns 200 OK
+	tempDir       string
+	krb5ConfPath  string
+	credCachePath string
 }
 
 func TestKerberosE2E(t *testing.T) {
@@ -96,6 +104,13 @@ func TestKerberosE2E(t *testing.T) {
 	t.Run("Falls through to Basic when Negotiate ticket is gone", fx.testFallsThroughOnTicketLoss)
 	t.Run("Refuses Basic when only NTLM/Negotiate configured against Basic-only proxy", fx.testRefusesBasicDowngrade)
 	t.Run("SPN allowlist excludes proxy", fx.testSPNAllowlistExclusion)
+	// Note: there is no e2e sub-test for NTLM because squid's only
+	// container-friendly NTLM helper (ntlm_fake_auth) emits Type-2
+	// challenges that go-ntlmssp's strict parser rejects, and a real
+	// NTLM helper requires a Windows DC. NTLM iteration through the
+	// multi-method picker is covered at the unit level in
+	// multiauth_integration_test.go::TestRetryProxyRequest_FallsThroughOn407
+	// and the cryptographic correctness lives in samuong/go-ntlmssp.
 }
 
 // ---------------------------------------------------------------------
@@ -115,10 +130,13 @@ func setupFixture(t *testing.T) *e2eFixture {
 		// on 127.0.0.1:8080 inside the container. squid forwards to
 		// it once authentication succeeds, so a 200 from this URL
 		// proves the auth chain reached the "request forwarded"
-		// stage. Keeping the upstream inside the container avoids
-		// any host-network egress dependency, so the test runs in
-		// environments where the host blocks loopback traffic from
-		// containers (e.g. corporate egress proxies).
+		// stage. Keeping the upstream inside the container is the
+		// simplest way to get cross-platform parity: reaching a
+		// host-side service from the container would require
+		// host.docker.internal (Docker Desktop only) or
+		// --add-host=host.docker.internal:host-gateway (Linux Docker
+		// 20.10+) plus careful firewall handling for inbound
+		// container-originated traffic on macOS.
 		upstreamURL: "http://127.0.0.1:8080/",
 	}
 	fx.buildImage(t)
@@ -185,6 +203,22 @@ func (fx *e2eFixture) runContainer(t *testing.T) {
 	args := []string{
 		"run", "-d", "--rm",
 		"--name", containerName,
+		// Container hardening: defence-in-depth for a test fixture
+		// that runs locally on developer machines. We keep the
+		// capabilities the bootstrap script actually needs (CHOWN +
+		// FOWNER + SETUID/SETGID for the keytab + squid privilege
+		// drop, plus NET_BIND_SERVICE so krb5kdc can bind :88,
+		// DAC_OVERRIDE for some squid runtime file ops) and drop
+		// the rest. squid drops to user proxy:proxy at runtime so
+		// retained root capabilities only affect bootstrap.
+		"--cap-drop=ALL",
+		"--cap-add=CHOWN",
+		"--cap-add=FOWNER",
+		"--cap-add=SETUID",
+		"--cap-add=SETGID",
+		"--cap-add=NET_BIND_SERVICE",
+		"--cap-add=DAC_OVERRIDE",
+		"--security-opt=no-new-privileges",
 		"-p", "127.0.0.1::3128",
 		"-p", "127.0.0.1::88/tcp",
 		"-p", "127.0.0.1::88/udp",
@@ -278,13 +312,15 @@ func (fx *e2eFixture) kinit(t *testing.T) {
 `, realm, realm, fx.kdcHostPort, fx.kdcHostPort, realm, realm)
 	require.NoError(t, os.WriteFile(fx.krb5ConfPath, []byte(conf), 0o600))
 
-	// Stash original env so teardown can restore it. The test cannot
-	// run multiple Kerberos contexts side-by-side without confusing
-	// macOS's Heimdal, so we mutate the process env for the duration.
-	fx.originalKRB5 = os.Getenv("KRB5_CONFIG")
-	fx.originalKRB5CC = os.Getenv("KRB5CCNAME")
-	require.NoError(t, os.Setenv("KRB5_CONFIG", fx.krb5ConfPath))
-	require.NoError(t, os.Setenv("KRB5CCNAME", "FILE:"+fx.credCachePath))
+	// Use t.Setenv so Go's testing framework restores the prior values
+	// even on panic / Fatal between here and teardown. This matters
+	// because the test may be invoked on a developer machine that's
+	// signed in to a real corporate Kerberos realm; without the
+	// guaranteed restore, a crashed test could leave the developer's
+	// shell pointing at a tempdir that's been deleted, breaking
+	// real-world Kerberos until they restart their session.
+	t.Setenv("KRB5_CONFIG", fx.krb5ConfPath)
+	t.Setenv("KRB5CCNAME", "FILE:"+fx.credCachePath)
 
 	// kinit -V reads from stdin when --password-file isn't supported.
 	// macOS Heimdal supports both --password-file and stdin via tty,
@@ -316,16 +352,7 @@ func (fx *e2eFixture) teardown() {
 	if fx.dockerBin != "" {
 		_ = exec.Command(fx.dockerBin, "rm", "-f", containerName).Run()
 	}
-	if fx.originalKRB5 != "" {
-		_ = os.Setenv("KRB5_CONFIG", fx.originalKRB5)
-	} else {
-		_ = os.Unsetenv("KRB5_CONFIG")
-	}
-	if fx.originalKRB5CC != "" {
-		_ = os.Setenv("KRB5CCNAME", fx.originalKRB5CC)
-	} else {
-		_ = os.Unsetenv("KRB5CCNAME")
-	}
+	// KRB5_CONFIG / KRB5CCNAME are restored automatically by t.Setenv.
 }
 
 // ---------------------------------------------------------------------
@@ -417,6 +444,22 @@ func (a *alpacaTestRT) RoundTrip(req *http.Request) (*http.Response, error) {
 // Sub-tests
 // ---------------------------------------------------------------------
 
+// instrumentedBasic wraps a basicAuthenticator with a call counter so
+// tests can assert that the basic-auth path was (or was not) invoked.
+type instrumentedBasic struct {
+	*basicAuthenticator
+	calls atomic.Int32
+}
+
+func (b *instrumentedBasic) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
+	b.calls.Add(1)
+	return b.basicAuthenticator.do(req, rt)
+}
+
+func newInstrumentedBasic(creds string) *instrumentedBasic {
+	return &instrumentedBasic{basicAuthenticator: newBasicAuthenticator(creds)}
+}
+
 func (fx *e2eFixture) testNegotiateSucceeds(t *testing.T) {
 	neg := newNegotiateAuthenticator(0)
 	require.NotNil(t, neg, "expected newNegotiateAuthenticator to find the kinit'd ticket")
@@ -425,9 +468,7 @@ func (fx *e2eFixture) testNegotiateSucceeds(t *testing.T) {
 
 	resp, err := fx.transportThroughAlpaca(chain).RoundTrip(mustReq(t, fx))
 	require.NoError(t, err)
-	defer resp.Body.Close() //nolint:errcheck
-	assert.Equal(t, http.StatusOK, resp.StatusCode,
-		"expected Negotiate auth to succeed via real Kerberos ticket")
+	assertSuccessful200(t, resp)
 }
 
 func (fx *e2eFixture) testBasicSucceeds(t *testing.T) {
@@ -437,27 +478,24 @@ func (fx *e2eFixture) testBasicSucceeds(t *testing.T) {
 
 	resp, err := fx.transportThroughAlpaca(chain).RoundTrip(mustReq(t, fx))
 	require.NoError(t, err)
-	defer resp.Body.Close() //nolint:errcheck
-	assert.Equal(t, http.StatusOK, resp.StatusCode,
-		"expected Basic auth to succeed when proxy advertises Basic")
+	assertSuccessful200(t, resp)
 }
 
 func (fx *e2eFixture) testMultiMethodPrefersNegotiate(t *testing.T) {
-	// All three methods configured. Negotiate should be tried first
-	// and should succeed; Basic must NOT be invoked.
+	// All methods configured. Negotiate should be tried first and
+	// should succeed; the instrumented Basic must NOT be invoked.
+	// This is the explicit "no fallthrough to Basic" assertion the
+	// previous version of this test only proved by elimination.
 	neg := newNegotiateAuthenticator(0)
 	require.NotNil(t, neg)
-	basic := newBasicAuthenticator(basicUser + ":" + basicPassword)
+	basic := newInstrumentedBasic(basicUser + ":" + basicPassword)
 	chain := newAuthChain(neg, basic)
 
 	resp, err := fx.transportThroughAlpaca(chain).RoundTrip(mustReq(t, fx))
 	require.NoError(t, err)
-	defer resp.Body.Close() //nolint:errcheck
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	// We can't directly assert "Basic was not invoked" without
-	// instrumenting the chain, but if Negotiate works and we get
-	// 200, the loop returned on the first non-407 — Basic was never
-	// reached.
+	assertSuccessful200(t, resp)
+	assert.EqualValues(t, 0, basic.calls.Load(),
+		"Basic must not be invoked when Negotiate succeeded first")
 }
 
 func (fx *e2eFixture) testFallsThroughOnTicketLoss(t *testing.T) {
@@ -476,9 +514,7 @@ func (fx *e2eFixture) testFallsThroughOnTicketLoss(t *testing.T) {
 
 	resp, err := fx.transportThroughAlpaca(chain).RoundTrip(mustReq(t, fx))
 	require.NoError(t, err)
-	defer resp.Body.Close() //nolint:errcheck
-	assert.Equal(t, http.StatusOK, resp.StatusCode,
-		"chain should fall through to Basic when Negotiate is ineligible")
+	assertSuccessful200(t, resp)
 }
 
 func (fx *e2eFixture) testRefusesBasicDowngrade(t *testing.T) {
@@ -524,14 +560,26 @@ func (fx *e2eFixture) testSPNAllowlistExclusion(t *testing.T) {
 	chain = newAuthChain(negotiator, basic)
 	resp, err = fx.transportThroughAlpaca(chain).RoundTrip(mustReq(t, fx))
 	require.NoError(t, err)
+	assertSuccessful200(t, resp)
+}
+
+// assertSuccessful200 verifies that resp is a 200 from the in-container
+// upstream test server (body equals upstreamBody) — not, say, squid's own
+// 200-shaped error page. Closes the body when done.
+func assertSuccessful200(t *testing.T, resp *http.Response) {
+	t.Helper()
 	defer resp.Body.Close() //nolint:errcheck
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, upstreamBody, string(body),
+		"expected upstream test server response, not a squid synthesised page")
 }
 
 // mustReq builds a fresh request to the upstream test server. Squid
-// will forward this once authentication succeeds; a 200 from the
-// in-container HTTP server is what proves the auth chain worked
-// end-to-end.
+// will forward this once authentication succeeds; a 200 with body
+// `upstreamBody` from the in-container HTTP server is what proves the
+// auth chain worked end-to-end.
 func mustReq(t *testing.T, fx *e2eFixture) *http.Request {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, fx.upstreamURL, nil)
