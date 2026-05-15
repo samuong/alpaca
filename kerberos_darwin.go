@@ -122,20 +122,47 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 	"unsafe"
 )
 
-type negotiateAuthenticator struct{}
+type negotiateAuthenticator struct {
+	// allowedSuffixes restricts SPN generation to proxy hostnames whose
+	// FQDN ends with one of these (case-insensitive, dot-prefixed)
+	// suffixes. Sourced from the KERBEROS_SPN_ALLOWLIST env var. An
+	// empty slice means "permissive" — any proxy host is allowed.
+	allowedSuffixes []string
+	// hasTicket is the ticket-availability check used by applicableTo
+	// at picker time. Defaults to checkKerberosTicket; tests inject
+	// their own to avoid depending on the developer's real Kerberos
+	// state.
+	hasTicket func() bool
+}
 
 // newNegotiateAuthenticator checks for a Kerberos ticket and returns a
 // negotiateAuthenticator if one is available. If waitSeconds > 0 and no ticket
 // is found immediately, it polls every second up to the given timeout.
 // Returns nil if no ticket is available.
+//
+// SPN allowlist: when KERBEROS_SPN_ALLOWLIST is set (comma-separated list
+// of DNS suffixes, e.g. ".corp.example.com,.example.test"), Negotiate
+// will only request a Kerberos service ticket for proxy hostnames whose
+// FQDN matches one of the suffixes. This defends against a hostile PAC
+// coercing the user's KDC to issue tickets for an attacker-named SPN.
+// Default empty = permissive (no behavioural change for trusted networks).
 func newNegotiateAuthenticator(waitSeconds int) proxyAuthenticator {
+	allowed := parseSPNAllowlist(os.Getenv("KERBEROS_SPN_ALLOWLIST"))
+	if len(allowed) > 0 {
+		log.Printf("Kerberos SPN allowlist active: %v", allowed)
+	}
 	if checkKerberosTicket() {
 		log.Println("Kerberos ticket found")
-		return &negotiateAuthenticator{}
+		return &negotiateAuthenticator{
+			allowedSuffixes: allowed,
+			hasTicket:       checkKerberosTicket,
+		}
 	}
 	if waitSeconds <= 0 {
 		return nil
@@ -143,10 +170,92 @@ func newNegotiateAuthenticator(waitSeconds int) proxyAuthenticator {
 	log.Printf("No Kerberos ticket found, waiting up to %d seconds...", waitSeconds)
 	if waitForKerberosTicket(waitSeconds) {
 		log.Println("Kerberos ticket found")
-		return &negotiateAuthenticator{}
+		return &negotiateAuthenticator{
+			allowedSuffixes: allowed,
+			hasTicket:       checkKerberosTicket,
+		}
 	}
 	log.Println("No Kerberos ticket found after waiting")
 	return nil
+}
+
+// parseSPNAllowlist parses a comma-separated list of DNS suffixes from
+// KERBEROS_SPN_ALLOWLIST. Each entry is normalised to lower-case and
+// dot-prefixed canonical form (".corp.example") so allowedHost can do a
+// single suffix match. A literal "*" entry means "allow any host" and
+// is translated to a nil allowlist (preserving backward-compatible
+// permissive behaviour for that explicit opt-out). Malformed entries
+// are dropped with a warning.
+func parseSPNAllowlist(value string) []string {
+	if value == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(strings.ToLower(part))
+		if part == "" {
+			continue
+		}
+		// "*" means "any host". Surface explicit override as nil so
+		// allowedHost short-circuits.
+		if part == "*" {
+			return nil
+		}
+		if !isAllowlistEntry(part) {
+			log.Printf("Ignoring malformed KERBEROS_SPN_ALLOWLIST entry %q", part)
+			continue
+		}
+		// Normalise to dot-prefixed canonical form so allowedHost is
+		// a single suffix match. Bare "corp.example" is recorded as
+		// ".corp.example" which matches "*.corp.example" hosts only;
+		// to also match the bare "corp.example" host, the user
+		// should add the bare form too.
+		if !strings.HasPrefix(part, ".") {
+			out = append(out, "."+part)
+		} else {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// isAllowlistEntry reports whether s looks like a plausible DNS
+// suffix entry. We allow lower-case alphanumeric, hyphen, and dot, with
+// an optional leading dot. We reject anything containing whitespace,
+// shell wildcards (other than the literal "*" handled above), or
+// other unexpected characters.
+func isAllowlistEntry(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= '0' && r <= '9',
+			r == '-', r == '.':
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// allowedHost reports whether the given proxy hostname is permitted to
+// receive a SPNEGO token under the configured allowlist. An empty
+// allowlist permits everything. Allowlist entries are normalised by
+// parseSPNAllowlist to dot-prefixed lower-case form so a single suffix
+// match is sufficient: ".corp.example" matches "proxy.corp.example".
+func (n *negotiateAuthenticator) allowedHost(host string) bool {
+	if len(n.allowedSuffixes) == 0 {
+		return true
+	}
+	host = "." + strings.ToLower(host)
+	for _, suffix := range n.allowedSuffixes {
+		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkKerberosTicket returns true if valid Kerberos credentials exist.
@@ -156,16 +265,25 @@ func checkKerberosTicket() bool {
 	return C.hasCredential() == 1
 }
 
-// waitForKerberosTicket polls for a Kerberos ticket every second up to timeout.
+// waitForKerberosTicket polls for a Kerberos ticket every second up to
+// the given timeout, returning true as soon as one becomes available.
+// The poll interval is deliberately short so that a `-w 1` invocation
+// performs at least one check before giving up.
 func waitForKerberosTicket(timeoutSeconds int) bool {
+	if timeoutSeconds <= 0 {
+		return false
+	}
 	deadline := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(2 * time.Second)
+	const pollInterval = time.Second
+	for {
 		if checkKerberosTicket() {
 			return true
 		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(pollInterval)
 	}
-	return false
 }
 
 // generateSPNEGOToken creates a SPNEGO token for the given proxy host using
@@ -196,6 +314,43 @@ func generateSPNEGOToken(proxyHost string) ([]byte, error) {
 
 func (n *negotiateAuthenticator) scheme() string { return "Negotiate" }
 
+// safeWithoutChallenge reports true: the SPNEGO initial token contains
+// no password material (it's a Kerberos service ticket request), so it
+// is safe to send before the proxy has explicitly advertised Negotiate.
+func (n *negotiateAuthenticator) safeWithoutChallenge() bool { return true }
+
+// applicableTo enforces three policies at picker time:
+//
+//  1. The proxy host must be non-empty (we cannot generate an SPN
+//     without it).
+//  2. The proxy host must satisfy KERBEROS_SPN_ALLOWLIST.
+//  3. A valid Kerberos ticket must currently be available. We re-check
+//     on every 407 because the user's ticket may have expired or been
+//     revoked since alpaca started; if it has, returning false here
+//     causes the picker to omit Negotiate and fall through to NTLM /
+//     Basic instead of failing the chain on a stale-ticket error.
+//
+// Returning false is silent fall-through; the chain proceeds to the
+// next configured authenticator.
+func (n *negotiateAuthenticator) applicableTo(proxyHost string) bool {
+	if proxyHost == "" {
+		return false
+	}
+	if !n.allowedHost(proxyHost) {
+		return false
+	}
+	check := n.hasTicket
+	if check == nil {
+		check = checkKerberosTicket
+	}
+	if !check() {
+		log.Printf("Kerberos ticket no longer valid; skipping Negotiate for %s",
+			proxyHost)
+		return false
+	}
+	return true
+}
+
 // do performs Negotiate/SPNEGO proxy authentication. It generates a SPNEGO
 // token for the upstream proxy and sends the request with a
 // Proxy-Authorization: Negotiate header.
@@ -208,6 +363,15 @@ func (n *negotiateAuthenticator) do(req *http.Request, rt http.RoundTripper) (*h
 	}
 	if proxyHost == "" {
 		return nil, fmt.Errorf("cannot determine proxy host for Negotiate auth")
+	}
+	// Defence-in-depth: applicableTo is the picker-time gate, but
+	// re-check here in case do() is invoked directly (e.g. by tests
+	// or future callers that bypass the picker).
+	if !n.allowedHost(proxyHost) {
+		log.Printf("Proxy host %q not on KERBEROS_SPN_ALLOWLIST; refusing Negotiate",
+			proxyHost)
+		return nil, fmt.Errorf(
+			"proxy host %q not in KERBEROS_SPN_ALLOWLIST", proxyHost)
 	}
 
 	token, err := generateSPNEGOToken(proxyHost)

@@ -34,6 +34,14 @@ type authenticator struct {
 
 func (a authenticator) scheme() string { return "NTLM" }
 
+// safeWithoutChallenge reports true: NTLM Type 1 contains a workstation
+// name and domain hint but no credential material, so it is safe to
+// send before the proxy has explicitly advertised NTLM.
+func (a authenticator) safeWithoutChallenge() bool { return true }
+
+// applicableTo always returns true: NTLM has no host policy.
+func (a authenticator) applicableTo(string) bool { return true }
+
 func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
 	hostname, _ := os.Hostname() // in case of error, just use the zero value ("") as hostname
 	negotiate, err := ntlmssp.NewNegotiateMessage(a.domain, hostname)

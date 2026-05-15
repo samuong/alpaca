@@ -61,11 +61,18 @@ func main() {
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
 	username := flag.String("u", whoAmI(), "username for proxy auth (NTLM)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
-	kerberos := flag.Bool("k", false, "enable Kerberos/Negotiate proxy authentication (macOS only)")
-	kerberosWait := flag.Int("w", 30, "seconds to wait for a Kerberos ticket (macOS only)")
+	kerberosWait := flag.Int("w", 0,
+		"seconds to wait for a Kerberos ticket at startup (macOS only)")
+	noKerberos := flag.Bool("no-kerberos", false,
+		"disable Kerberos/Negotiate auto-detection (macOS only)")
 	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
 	version := flag.Bool("version", false, "print version number")
 	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
+	// -k is retained for backward compatibility: it sets the default
+	// Kerberos wait time to 30s if -w is not also specified.
+	kerberos := flag.Bool("k", false,
+		"deprecated: enable Kerberos wait at startup (macOS only). "+
+			"Negotiate is auto-detected when a ticket is present; pass -w to wait.")
 	flag.Parse()
 
 	if *quiet {
@@ -85,9 +92,11 @@ func main() {
 	var basicAuth *basicAuthenticator
 	var a *authenticator
 
+	// Basic credentials come from BASIC_CREDENTIALS to avoid leaking the
+	// password into shell history (mirrors how NTLM_CREDENTIALS works).
 	if value := os.Getenv("BASIC_CREDENTIALS"); value != "" {
 		basicAuth = newBasicAuthenticator(value)
-		log.Println("Basic proxy authentication configured")
+		log.Println("Basic proxy authentication configured from BASIC_CREDENTIALS")
 	}
 
 	// NTLM credential sources
@@ -119,9 +128,25 @@ func main() {
 
 	// Build auth chain: Negotiate → NTLM → Basic (matches Chrome's hierarchy;
 	// Basic has the lowest security score because it sends credentials unencrypted).
+	//
+	// Kerberos/Negotiate is auto-detected on macOS: if a valid ticket is
+	// present at startup (or appears within -w seconds), Negotiate is
+	// added to the chain. No flag needed for the common "Apple SSO is
+	// signed in" case — alpaca behaves like the keyring source.
 	var methods []proxyAuthenticator
-	if *kerberos {
-		if neg := newNegotiateAuthenticator(*kerberosWait); neg != nil {
+	if !*noKerberos {
+		wait := *kerberosWait
+		if *kerberos && wait == 0 {
+			// Backward compat for the legacy -k flag.
+			wait = 30
+		}
+		if os.Getenv("KERBEROS_SPN_ALLOWLIST") == "" {
+			log.Println("Note: KERBEROS_SPN_ALLOWLIST not set; if Kerberos " +
+				"is enabled, SPNEGO tickets may be requested for ANY proxy " +
+				"host returned by PAC. Set KERBEROS_SPN_ALLOWLIST=.your.corp.example " +
+				"to restrict.")
+		}
+		if neg := newNegotiateAuthenticator(wait); neg != nil {
 			log.Println("Kerberos/Negotiate authentication available")
 			methods = append(methods, neg)
 		}
@@ -132,7 +157,11 @@ func main() {
 	if basicAuth != nil {
 		methods = append(methods, basicAuth)
 	}
-	auth := newMultiAuthenticator(methods...)
+	auth := newAuthChain(methods...)
+	if auth == nil {
+		log.Println("No authentication methods configured; alpaca will not " +
+			"answer proxy 407 responses")
+	}
 
 	errch := make(chan error)
 
@@ -155,7 +184,7 @@ func main() {
 	log.Fatal(<-errch)
 }
 
-func createServer(port int, pacurl string, auth proxyAuthenticator, enableSocks bool) *http.Server {
+func createServer(port int, pacurl string, auth *authChain, enableSocks bool) *http.Server {
 	pacWrapper := NewPACWrapper(PACData{Port: port})
 	proxyFinder := NewProxyFinder(pacurl, pacWrapper, enableSocks)
 	proxyHandler := NewProxyHandler(auth, getProxyFromContext, proxyFinder.blockProxy)

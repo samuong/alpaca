@@ -32,9 +32,12 @@ type transport struct {
 }
 
 func (t *transport) dial(proxy *url.URL) error {
-	if err := t.Close(); err != nil {
-		return err
-	}
+	// Close any prior connection but don't propagate the error: the
+	// previous socket is dead either way (typically because a proxy
+	// RST'd it after a 407), and the caller cares about the new dial,
+	// not the previous teardown. Logging at debug-equivalent (no level
+	// system in alpaca) is unhelpful since this is the common case.
+	_ = t.Close()
 	var conn net.Conn
 	var err error
 	if proxy.Scheme == "https" {
