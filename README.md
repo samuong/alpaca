@@ -63,7 +63,11 @@ If the proxy server requires valid authentication credentials, you can provide t
   the environment;
 - Kerberos / Negotiate, **automatically on macOS** when a ticket from Apple
   SSO / Ticket Viewer / `kinit` is available — no flag required (pass `-w
-  SECONDS` to wait for one at startup, or `--no-kerberos` to opt out);
+  SECONDS` to wait for one at startup, or `--no-kerberos` to opt out).
+  Tickets that arrive *after* alpaca starts are picked up automatically:
+  alpaca re-checks credential availability on every 407 response, so a
+  user who launches alpaca before signing in to Apple SSO does not need
+  to restart it once the ticket lands;
 - NTLM via the shell prompt, if `-d` is passed;
 - NTLM via the shell environment, if `NTLM_CREDENTIALS` is set;
 - the system keyring (macOS, Windows and Linux/GNOME supported), if none of

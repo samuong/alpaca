@@ -145,7 +145,6 @@ func main() {
 					"auto-detected without -k whenever a Kerberos "+
 					"ticket is present.")
 		}
-		ensureSPNAllowlist()
 		if neg := newNegotiateAuthenticator(wait); neg != nil {
 			log.Println("Kerberos/Negotiate authentication available")
 			methods = append(methods, neg)
@@ -204,39 +203,6 @@ func createServer(port int, pacurl string, auth *authChain, enableSocks bool) *h
 		// value to disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
-}
-
-// ensureSPNAllowlist defaults KERBEROS_SPN_ALLOWLIST to the user's home
-// Kerberos realm when the variable is empty, and prints a stderr nudge
-// telling the user what it picked. Operators can override with an
-// explicit value (including the literal "*" for "any host"). The stderr
-// path is deliberate: services launched via launchd / brew services
-// route log.Println to a log file no one reads, but stderr is captured
-// in launchd's session at first run and is the only reliable way to
-// surface a security-sensitive default to a user who didn't read the
-// README.
-func ensureSPNAllowlist() {
-	if os.Getenv("KERBEROS_SPN_ALLOWLIST") != "" {
-		return
-	}
-	realm := defaultKerberosRealm()
-	if realm == "" {
-		fmt.Fprintln(os.Stderr,
-			"WARNING: KERBEROS_SPN_ALLOWLIST is unset and the user's "+
-				"Kerberos realm could not be determined. SPNEGO tickets "+
-				"will be requested for ANY proxy host returned by PAC. "+
-				"Set KERBEROS_SPN_ALLOWLIST=.your.corp.example to restrict, "+
-				"or KERBEROS_SPN_ALLOWLIST=* to silence this warning and "+
-				"accept the permissive default.")
-		return
-	}
-	implicit := "." + realm
-	_ = os.Setenv("KERBEROS_SPN_ALLOWLIST", implicit)
-	fmt.Fprintf(os.Stderr,
-		"KERBEROS_SPN_ALLOWLIST not set; defaulting to %q (your "+
-			"home realm). Override with an explicit value, or set "+
-			"KERBEROS_SPN_ALLOWLIST=* to permit any proxy host.\n",
-		implicit)
 }
 
 func networks(hostname string) []string {

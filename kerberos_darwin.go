@@ -177,6 +177,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -184,52 +185,152 @@ import (
 type negotiateAuthenticator struct {
 	// allowedSuffixes restricts SPN generation to proxy hostnames whose
 	// FQDN ends with one of these (case-insensitive, dot-prefixed)
-	// suffixes. Sourced from the KERBEROS_SPN_ALLOWLIST env var. An
-	// empty slice means "permissive" — any proxy host is allowed.
+	// suffixes. Sourced from the KERBEROS_SPN_ALLOWLIST env var, or
+	// derived from the user's default Kerberos realm when the env var
+	// is unset. An empty slice + implicitDefault==false means the user
+	// explicitly opted in to permissive mode (KERBEROS_SPN_ALLOWLIST=*);
+	// an empty slice + implicitDefault==true means we tried to derive
+	// a default at startup and failed, and applicableTo should retry
+	// the derivation lazily on each 407 (see late-ticket recovery
+	// below).
 	allowedSuffixes []string
+	// implicitDefault records whether allowedSuffixes was filled in by
+	// alpaca's own default-realm derivation rather than by an explicit
+	// KERBEROS_SPN_ALLOWLIST setting. When true and allowedSuffixes is
+	// empty (i.e. derivation failed at startup, typically because no
+	// Kerberos ticket existed yet), applicableTo retries the derivation
+	// per-407. This closes a security hole where a ticket arriving
+	// after alpaca starts would otherwise be governed by a permissive
+	// (nil) allowlist instead of the home-realm-restricted one the
+	// README documents.
+	implicitDefault bool
+	// allowlistMu guards lazy population of allowedSuffixes when
+	// implicitDefault is true.
+	allowlistMu sync.Mutex
 	// hasTicket is the ticket-availability check used by applicableTo
 	// at picker time. Defaults to checkKerberosTicket; tests inject
 	// their own to avoid depending on the developer's real Kerberos
 	// state.
 	hasTicket func() bool
+	// realmFn is the realm-derivation hook used for lazy allowlist
+	// recovery. Defaults to defaultKerberosRealm; tests inject their
+	// own.
+	realmFn func() string
+	// onLazyResolve is invoked once when applicableTo successfully
+	// derives the implicit allowlist after startup. It exists so
+	// alpaca can announce the result to stderr at the moment it
+	// becomes effective, mirroring the startup-time announcement when
+	// the realm was derivable up front. Optional; nil is fine.
+	onLazyResolve func(allowlist []string)
 }
 
-// newNegotiateAuthenticator checks for a Kerberos ticket and returns a
-// negotiateAuthenticator if one is available. If waitSeconds > 0 and no ticket
-// is found immediately, it polls every second up to the given timeout.
-// Returns nil if no ticket is available.
+// newNegotiateAuthenticator returns a negotiateAuthenticator that will
+// be consulted on every 407 response. It does NOT require a Kerberos
+// ticket to exist at the moment alpaca starts: applicableTo() re-checks
+// ticket availability per-request, so a ticket that arrives later (e.g.
+// because Apple SSO finishes after alpaca, or the user runs kinit
+// mid-session) starts being honoured at the next 407 without a
+// restart.
 //
-// SPN allowlist: when KERBEROS_SPN_ALLOWLIST is set (comma-separated list
-// of DNS suffixes, e.g. ".corp.example.com,.example.test"), Negotiate
-// will only request a Kerberos service ticket for proxy hostnames whose
-// FQDN matches one of the suffixes. This defends against a hostile PAC
-// coercing the user's KDC to issue tickets for an attacker-named SPN.
-// Default empty = permissive (no behavioural change for trusted networks).
+// waitSeconds is the optional startup wait: if > 0 and no ticket is
+// present, alpaca will block here for up to waitSeconds polling for one
+// to arrive. This is purely cosmetic — it makes the startup log line
+// say "ticket found" rather than "no ticket yet". A value of 0 means
+// "don't wait at startup, just use whatever is in the cache when each
+// request comes through".
+//
+// SPN allowlist resolution:
+//
+//   - If the user explicitly sets KERBEROS_SPN_ALLOWLIST, that value
+//     is parsed and used verbatim. The literal "*" is honoured as
+//     "permissive — any host". This is the only path through which the
+//     authenticator becomes permissive.
+//   - If KERBEROS_SPN_ALLOWLIST is empty, we try to derive a default
+//     from the user's home Kerberos realm via gss_inquire_cred. If
+//     that succeeds, the allowlist is set to ".<realm>".
+//   - If derivation fails (no ticket present at startup), the
+//     authenticator is constructed with implicitDefault=true and an
+//     empty allowedSuffixes. applicableTo() will then retry the
+//     derivation lazily on each 407: a ticket that arrives later
+//     auto-populates a sensible default. This avoids the security
+//     hole where a late-arriving ticket would otherwise be governed
+//     by a permissive (nil) allowlist.
 func newNegotiateAuthenticator(waitSeconds int) proxyAuthenticator {
-	allowed := parseSPNAllowlist(os.Getenv("KERBEROS_SPN_ALLOWLIST"))
-	if len(allowed) > 0 {
-		log.Printf("Kerberos SPN allowlist active: %v", allowed)
+	allowlist, implicit, lazyAnnounce := resolveSPNAllowlist()
+	if !implicit && len(allowlist) > 0 {
+		log.Printf("Kerberos SPN allowlist active: %v", allowlist)
 	}
-	if checkKerberosTicket() {
+	auth := &negotiateAuthenticator{
+		allowedSuffixes: allowlist,
+		implicitDefault: implicit,
+		hasTicket:       checkKerberosTicket,
+		realmFn:         defaultKerberosRealm,
+		onLazyResolve:   lazyAnnounce,
+	}
+	switch {
+	case checkKerberosTicket():
 		log.Println("Kerberos ticket found")
-		return &negotiateAuthenticator{
-			allowedSuffixes: allowed,
-			hasTicket:       checkKerberosTicket,
+	case waitSeconds <= 0:
+		log.Println("No Kerberos ticket at startup; will check again " +
+			"on each 407 response so a ticket that arrives later " +
+			"(e.g. via kinit or Apple SSO) is honoured automatically")
+	default:
+		log.Printf("No Kerberos ticket found, waiting up to %d seconds...",
+			waitSeconds)
+		if waitForKerberosTicket(waitSeconds) {
+			log.Println("Kerberos ticket found")
+		} else {
+			log.Println("No Kerberos ticket found after waiting; " +
+				"will continue to check on each 407 response")
 		}
 	}
-	if waitSeconds <= 0 {
-		return nil
+	return auth
+}
+
+// resolveSPNAllowlist returns the SPN allowlist alpaca should run with,
+// distinguishing between the three cases the authenticator cares about:
+//
+//   - Explicit: the user set KERBEROS_SPN_ALLOWLIST (including "*").
+//     Returned values reflect parseSPNAllowlist's interpretation;
+//     implicit is false.
+//   - Implicit-derivable: the env var is empty but the user has a
+//     Kerberos ticket whose realm we can read. The allowlist is
+//     ".<realm>" and implicit is false (we successfully filled in a
+//     default, so applicableTo doesn't need to retry).
+//   - Implicit-pending: the env var is empty AND no ticket is
+//     available yet so the realm couldn't be derived. allowlist is
+//     nil, implicit is true. applicableTo will retry the derivation
+//     on each 407 once a ticket appears, and emits the lazyAnnounce
+//     callback so the user sees the same stderr message they would
+//     have seen if derivation had succeeded at startup.
+func resolveSPNAllowlist() (allowlist []string, implicit bool,
+	lazyAnnounce func(allowlist []string)) {
+	if explicit := os.Getenv("KERBEROS_SPN_ALLOWLIST"); explicit != "" {
+		return parseSPNAllowlist(explicit), false, nil
 	}
-	log.Printf("No Kerberos ticket found, waiting up to %d seconds...", waitSeconds)
-	if waitForKerberosTicket(waitSeconds) {
-		log.Println("Kerberos ticket found")
-		return &negotiateAuthenticator{
-			allowedSuffixes: allowed,
-			hasTicket:       checkKerberosTicket,
-		}
+	realm := defaultKerberosRealm()
+	if realm != "" {
+		implied := []string{"." + realm}
+		fmt.Fprintf(os.Stderr,
+			"KERBEROS_SPN_ALLOWLIST not set; defaulting to %q (your "+
+				"home realm). Override with an explicit value, or set "+
+				"KERBEROS_SPN_ALLOWLIST=* to permit any proxy host.\n",
+			implied[0])
+		return implied, false, nil
 	}
-	log.Println("No Kerberos ticket found after waiting")
-	return nil
+	fmt.Fprintln(os.Stderr,
+		"WARNING: KERBEROS_SPN_ALLOWLIST is unset and no Kerberos "+
+			"credential is available yet to derive a default from. "+
+			"alpaca will retry derivation when a ticket appears; until "+
+			"then SPNEGO will refuse to authenticate against any proxy "+
+			"so credentials cannot leak. Set KERBEROS_SPN_ALLOWLIST=* "+
+			"to silence this warning and accept the permissive default.")
+	return nil, true, func(resolved []string) {
+		fmt.Fprintf(os.Stderr,
+			"Kerberos credential now available; KERBEROS_SPN_ALLOWLIST "+
+				"resolved to %v (your home realm). Set the env var "+
+				"explicitly to override.\n", resolved)
+	}
 }
 
 // parseSPNAllowlist parses a comma-separated list of DNS suffixes from
@@ -418,9 +519,6 @@ func (n *negotiateAuthenticator) applicableTo(proxyHost string) bool {
 	if proxyHost == "" {
 		return false
 	}
-	if !n.allowedHost(proxyHost) {
-		return false
-	}
 	check := n.hasTicket
 	if check == nil {
 		check = checkKerberosTicket
@@ -430,6 +528,58 @@ func (n *negotiateAuthenticator) applicableTo(proxyHost string) bool {
 			proxyHost)
 		return false
 	}
+	// Lazy allowlist resolution closes the late-ticket security hole:
+	// when KERBEROS_SPN_ALLOWLIST was unset and no ticket existed at
+	// startup, the constructor left allowedSuffixes empty AND set
+	// implicitDefault=true. Now that a ticket has appeared (we just
+	// confirmed via check()), retry the realm derivation so the user
+	// gets the same home-realm-restricted default they would have got
+	// if the ticket had been present at startup. If derivation still
+	// fails (e.g. principal name format is unrecognisable), refuse
+	// rather than fall through to a permissive default.
+	if n.implicitDefault {
+		if !n.tryResolveImplicitAllowlist() {
+			log.Printf(
+				"Kerberos ticket present but realm could not be "+
+					"derived; refusing Negotiate for %s. Set "+
+					"KERBEROS_SPN_ALLOWLIST=* to accept the "+
+					"permissive default.", proxyHost)
+			return false
+		}
+	}
+	if !n.allowedHost(proxyHost) {
+		return false
+	}
+	return true
+}
+
+// tryResolveImplicitAllowlist attempts to populate allowedSuffixes from
+// the user's now-available Kerberos credential. It is a no-op (returning
+// true) if a previous call already resolved the allowlist, and returns
+// false only when realm derivation continues to fail. The mutex
+// serialises concurrent 407s during the brief window where the
+// allowlist is being resolved for the first time.
+func (n *negotiateAuthenticator) tryResolveImplicitAllowlist() bool {
+	n.allowlistMu.Lock()
+	defer n.allowlistMu.Unlock()
+	if !n.implicitDefault {
+		return true // someone else won the race and resolved it.
+	}
+	resolve := n.realmFn
+	if resolve == nil {
+		resolve = defaultKerberosRealm
+	}
+	realm := resolve()
+	if realm == "" {
+		return false
+	}
+	n.allowedSuffixes = []string{"." + realm}
+	n.implicitDefault = false
+	if n.onLazyResolve != nil {
+		n.onLazyResolve(n.allowedSuffixes)
+	}
+	log.Printf("Kerberos SPN allowlist resolved late from home realm: %v",
+		n.allowedSuffixes)
 	return true
 }
 

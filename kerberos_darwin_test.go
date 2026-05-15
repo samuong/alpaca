@@ -17,6 +17,7 @@
 package main
 
 import (
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -149,7 +150,10 @@ func TestApplicableTo(t *testing.T) {
 	withTicket := func() bool { return true }
 	withoutTicket := func() bool { return false }
 
-	t.Run("empty allowlist permits any host when ticket present", func(t *testing.T) {
+	t.Run("explicit permissive allowlist permits any host", func(t *testing.T) {
+		// allowedSuffixes==nil + implicitDefault==false is the
+		// shape produced by KERBEROS_SPN_ALLOWLIST=*: the user has
+		// explicitly opted in to permissive mode.
 		n := &negotiateAuthenticator{hasTicket: withTicket}
 		assert.True(t, n.applicableTo("any.example"))
 	})
@@ -174,5 +178,112 @@ func TestApplicableTo(t *testing.T) {
 		// to NTLM/Basic instead of failing with a stale-ticket error.
 		n := &negotiateAuthenticator{hasTicket: withoutTicket}
 		assert.False(t, n.applicableTo("proxy.example"))
+	})
+}
+
+func TestApplicableToLateTicketDoesNotBypassAllowlist(t *testing.T) {
+	// Regression test: when alpaca starts with no Kerberos ticket,
+	// resolveSPNAllowlist returns implicit=true with allowedSuffixes==nil.
+	// If a ticket arrives later, applicableTo MUST NOT treat the empty
+	// allowlist as "permissive — any host". It must lazily derive the
+	// home-realm allowlist (or refuse) before agreeing to act.
+
+	// hasTicket starts false (no ticket at startup) and flips true
+	// later (simulating Apple SSO completing).
+	var ticketArrived atomic.Bool
+	hasTicket := func() bool { return ticketArrived.Load() }
+
+	// realmFn returns "" until the ticket arrives, then "corp.example".
+	realmFn := func() string {
+		if !ticketArrived.Load() {
+			return ""
+		}
+		return "corp.example"
+	}
+
+	t.Run("no ticket → no Negotiate", func(t *testing.T) {
+		n := &negotiateAuthenticator{
+			implicitDefault: true,
+			hasTicket:       hasTicket,
+			realmFn:         realmFn,
+		}
+		assert.False(t, n.applicableTo("attacker.example"),
+			"with no ticket, ANY proxy host must be refused")
+	})
+
+	t.Run("ticket arrives → only home realm matches", func(t *testing.T) {
+		n := &negotiateAuthenticator{
+			implicitDefault: true,
+			hasTicket:       hasTicket,
+			realmFn:         realmFn,
+		}
+		ticketArrived.Store(true)
+
+		// Hostile PAC pointing alpaca at attacker.example must be refused
+		// even though a ticket now exists, because attacker.example is
+		// not in the user's home realm.
+		assert.False(t, n.applicableTo("attacker.example"),
+			"late-arriving ticket must not unlock arbitrary proxies")
+
+		// Home-realm proxy is now allowed.
+		assert.True(t, n.applicableTo("proxy.corp.example"),
+			"late-arriving ticket should permit the home-realm proxy "+
+				"once the implicit allowlist resolves")
+
+		// implicitDefault should now be false; subsequent calls
+		// short-circuit the lazy resolve.
+		assert.False(t, n.implicitDefault,
+			"implicitDefault should be cleared once allowlist resolves")
+		assert.Equal(t, []string{".corp.example"}, n.allowedSuffixes)
+	})
+
+	t.Run("ticket arrives but realm not derivable → refuse", func(t *testing.T) {
+		// Pathological case: a ticket exists but its principal name
+		// isn't in user@REALM form. Refuse rather than fall through
+		// to permissive.
+		n := &negotiateAuthenticator{
+			implicitDefault: true,
+			hasTicket:       func() bool { return true },
+			realmFn:         func() string { return "" },
+		}
+		assert.False(t, n.applicableTo("anything.example"))
+		assert.True(t, n.implicitDefault, "implicitDefault must remain "+
+			"set when realm derivation fails so a future ticket-refresh "+
+			"can retry")
+	})
+}
+
+func TestResolveSPNAllowlist(t *testing.T) {
+	t.Run("explicit value", func(t *testing.T) {
+		t.Setenv("KERBEROS_SPN_ALLOWLIST", ".corp.example")
+		got, implicit, lazy := resolveSPNAllowlist()
+		assert.Equal(t, []string{".corp.example"}, got)
+		assert.False(t, implicit)
+		assert.Nil(t, lazy)
+	})
+
+	t.Run("explicit asterisk yields permissive", func(t *testing.T) {
+		t.Setenv("KERBEROS_SPN_ALLOWLIST", "*")
+		got, implicit, lazy := resolveSPNAllowlist()
+		assert.Nil(t, got)
+		assert.False(t, implicit,
+			"explicit '*' is a deliberate user opt-in, not an implicit default")
+		assert.Nil(t, lazy)
+	})
+
+	t.Run("unset and no realm yields implicit-pending", func(t *testing.T) {
+		t.Setenv("KERBEROS_SPN_ALLOWLIST", "")
+		// On a developer machine running this test, defaultKerberosRealm
+		// may or may not return a realm depending on whether the
+		// developer has a TGT. The deterministic case to assert is:
+		// we never return implicit=false with an empty allowlist (i.e.
+		// "permissive" without an explicit asterisk).
+		got, implicit, _ := resolveSPNAllowlist()
+		if len(got) == 0 {
+			assert.True(t, implicit,
+				"an empty allowlist with no explicit '*' must be "+
+					"flagged as implicit so applicableTo() can retry "+
+					"the realm derivation later")
+		}
 	})
 }

@@ -91,6 +91,12 @@ connection-lifecycle invariants:
 - Any error returned by a method aborts the chain (this is the
   abort-on-error invariant — see test `TestRetryProxyRequest_AbortsChainOnError`).
 
+Negotiate availability is re-checked per-407 via `applicableTo()` rather
+than at startup, so a Kerberos ticket that arrives after alpaca starts
+(e.g. because Apple SSO finishes after the LaunchAgent launches alpaca,
+or because the user runs `kinit` mid-session) is honoured automatically
+without a restart.
+
 Downgrade refusal: when the proxy returns 407 with no parseable
 `Proxy-Authenticate`, only authenticators that opt in via
 `safeWithoutChallenge() bool` are considered. Today that's NTLM and
