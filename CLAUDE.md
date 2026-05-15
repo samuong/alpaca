@@ -42,7 +42,7 @@ alpaca/
 ├── transport.go           # Low-level connection management for CONNECT tunnels
 ├── authenticator.go       # NTLM authentication
 ├── basicauth.go           # Basic HTTP proxy authentication
-├── multiauth.go           # Multi-method authenticator with per-proxy caching
+├── multiauth.go           # authChain: picks authenticators for a 407 response
 ├── kerberos*.go           # Kerberos/Negotiate auth (macOS-specific)
 ├── credentials.go         # Credential sourcing (terminal, env, keyring)
 ├── keyring*.go            # System keyring integration per platform
@@ -73,11 +73,44 @@ Requests flow through a middleware chain built in `main.go:createServer`:
 ### Authentication Chain
 
 Authentication methods are tried in order via `multiauth.go`. The chain is:
-Negotiate → NTLM → Basic (matching Chrome's hierarchy). The multi-authenticator selects methods based on the proxy's `Proxy-Authenticate` response header and caches which method works per proxy host.
+Negotiate → NTLM → Basic (matching Chrome's hierarchy). The `*authChain`
+type is a *picker*: given the schemes the proxy advertised in its 407
+response, plus the proxy hostname, it returns the ordered list of methods
+the caller should attempt. `proxy.go` owns the iteration and the
+connection-lifecycle invariants:
+
+- CONNECT path (`retryConnectWithAuth`) re-dials the proxy on a fresh TCP
+  connection between methods. This is required because NTLM and Negotiate
+  are connection-bound (RFC 4559) and must not share a socket with another
+  scheme's state machine.
+- Plain HTTP path (`retryProxyRequestWithAuth`) gives each method its own
+  cloned `*http.Transport` so its connection pool is isolated; the
+  underlying `http.Transport` already manages connection reuse for NTLM's
+  Type 1 → Type 3 sequence within a single method.
+- The header `Proxy-Authorization` is cleared between attempts.
+- Any error returned by a method aborts the chain (this is the
+  abort-on-error invariant — see test `TestRetryProxyRequest_AbortsChainOnError`).
+
+Downgrade refusal: when the proxy returns 407 with no parseable
+`Proxy-Authenticate`, only authenticators that opt in via
+`safeWithoutChallenge() bool` are considered. Today that's NTLM and
+Negotiate; Basic is excluded so its credentials are never sent without an
+explicit server advertisement.
+
+Host policy: each authenticator implements `applicableTo(proxyHost) bool`.
+The `negotiateAuthenticator` uses this to enforce `KERBEROS_SPN_ALLOWLIST`,
+falling through to the next method (instead of failing the whole chain) for
+hosts that are out-of-policy.
 
 ### Key Interfaces
 
-- `proxyAuthenticator` (in `proxy.go`) — implemented by `authenticator` (NTLM), `basicAuthenticator`, `negotiateAuthenticator`, and `multiAuthenticator`
+- `proxyAuthenticator` (in `proxy.go`) — implemented by `authenticator`
+  (NTLM), `basicAuthenticator`, and `negotiateAuthenticator`. Methods:
+  `do(req, rt) (resp, err)`, `scheme()`, `safeWithoutChallenge()`,
+  `applicableTo(host)`.
+- `*authChain` (in `multiauth.go`) — picks the ordered list of
+  authenticators to try given the schemes the proxy advertised. NOT a
+  `proxyAuthenticator` itself.
 
 ## Build & Test
 
@@ -174,10 +207,20 @@ Triggered on tags matching `v*`. Creates a GitHub release and uploads platform-s
 | `-d`        | (none)       | NTLM domain                                    |
 | `-u`        | current user | Username for proxy auth (NTLM)                 |
 | `-H`        | false        | Print hashed NTLM credentials and exit         |
-| `-k`        | false        | Enable Kerberos/Negotiate authentication (macOS)|
-| `-w`        | `30`         | Kerberos ticket wait time in seconds (macOS)   |
+| `-w`        | `0`          | Seconds to wait at startup for a Kerberos ticket (macOS) |
+| `--no-kerberos` | false    | Disable Kerberos auto-detection (macOS)        |
+| `-k`        | false        | **Deprecated.** Equivalent to `-w 30`. Auto-detect makes it unnecessary |
 | `-q`        | false        | Quiet mode — suppress all log output           |
 | `-version`  | false        | Print version and exit                         |
+
+## Environment variables
+
+| Variable                 | Purpose                                                   |
+|--------------------------|-----------------------------------------------------------|
+| `NTLM_CREDENTIALS`       | `username@DOMAIN:hash` (generate with `alpaca -H`)        |
+| `BASIC_CREDENTIALS`      | `login:password` for Basic auth                           |
+| `KERBEROS_SPN_ALLOWLIST` | Comma-separated DNS suffixes that may receive SPNEGO tokens. On macOS defaults to the user's home Kerberos realm when unset; set to `*` to permit any host explicitly. |
+| `NTLM_USERNAME`/`NTLM_DOMAIN` | Used by the keyring credential source                |
 
 ## Key Dependencies
 
