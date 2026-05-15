@@ -32,42 +32,76 @@ import (
 
 var tlsClientConfig *tls.Config
 
+// proxyAuthenticator is implemented by per-scheme authenticators
+// (NTLM, Negotiate, Basic). The picker (*authChain) calls the
+// predicate methods to decide whether and in what order to try each
+// authenticator; proxy.go's retry helpers then call do() to actually
+// perform the authenticated request.
+//
+// Picker call order, given a 407 response:
+//
+//  1. For each configured authenticator, the picker calls
+//     applicableTo(proxyHost). False excludes the method silently;
+//     the chain falls through to the next configured method.
+//  2. Authenticators that survive (1) are intersected with the
+//     advertised schemes (case-insensitive match against scheme()).
+//     Methods not on that list are dropped.
+//  3. If the proxy didn't advertise any parseable scheme, only
+//     authenticators returning safeWithoutChallenge() == true are
+//     kept. This is the F-1 / F-4 downgrade defence: schemes whose
+//     first message contains credential material (Basic) MUST opt
+//     out, otherwise a hostile endpoint returning a bare 407 could
+//     harvest the credential.
+//
+// proxy.go's retry helpers iterate the resulting candidate list,
+// calling do() on each in turn. Any error from do() aborts the chain.
+// A 407 from do() is treated as "this method was rejected, try the
+// next"; a non-407 response is returned to the caller.
 type proxyAuthenticator interface {
-	// do performs a single authenticated request after the proxy has
-	// returned 407 Proxy Authentication Required. The implementation
-	// MUST issue all of its round-trips (e.g. NTLM Type 1 / Type 3) on
-	// the supplied RoundTripper; it must NOT re-dial.
-	//
-	// Body ownership: on success do() returns a non-nil response whose
-	// Body the CALLER is responsible for closing. On error do() returns
-	// (nil, err) and has cleaned up any internal state.
-	do(req *http.Request, rt http.RoundTripper) (*http.Response, error)
-
-	// scheme returns the HTTP authentication scheme this authenticator
-	// handles (e.g. "Negotiate", "NTLM", "Basic"), matching the token
-	// the proxy sends in the Proxy-Authenticate response header. The
-	// returned value is matched case-insensitively against the schemes
-	// advertised by the proxy.
+	// scheme returns the HTTP authentication scheme this
+	// authenticator handles (e.g. "Negotiate", "NTLM", "Basic").
+	// Matched case-insensitively against the schemes the proxy
+	// advertised in its Proxy-Authenticate response header.
 	scheme() string
-
-	// safeWithoutChallenge reports whether this authenticator may be
-	// used against a proxy that returned 407 with no parseable
-	// Proxy-Authenticate header. The contract is "may I send my first
-	// message before the proxy has explicitly told me my scheme is
-	// supported?". Schemes whose first message contains credential
-	// material (e.g. Basic) MUST return false to avoid leaking
-	// credentials to anything that returns 407. Schemes that initiate
-	// with a non-credential probe (NTLM Type 1, SPNEGO initial token)
-	// may return true.
-	safeWithoutChallenge() bool
 
 	// applicableTo reports whether this authenticator is willing to
 	// authenticate against the given proxy host. Implementations may
-	// use this to enforce policy (e.g. SPN allowlists for Kerberos).
-	// Returning false causes the picker to omit this authenticator
-	// from the candidate list so the chain falls through to the next
-	// method, instead of failing the entire chain mid-flight.
+	// use this to enforce policy (e.g. SPN allowlists for Kerberos,
+	// or a state-of-the-world check such as "is my Kerberos ticket
+	// still valid"). Returning false causes the picker to omit this
+	// authenticator from the candidate list, so the chain falls
+	// through to the next method instead of failing mid-flight.
 	applicableTo(proxyHost string) bool
+
+	// safeWithoutChallenge reports whether this authenticator may be
+	// used against a proxy that returned 407 with no parseable
+	// Proxy-Authenticate header. The contract is: "is my first
+	// message safe to send before the proxy has explicitly named me
+	// as a supported scheme?". Schemes whose first message contains
+	// credential MATERIAL (e.g. Basic, where the first byte sent IS
+	// the password) MUST return false. Schemes that initiate with a
+	// non-credential probe (NTLM Type 1, SPNEGO initial token) may
+	// return true even though those probes do contain identifying
+	// information about the principal — they don't contain a secret
+	// the attacker doesn't already have a chance to capture from
+	// challenge-response traffic.
+	safeWithoutChallenge() bool
+
+	// do performs a single authenticated request after the proxy has
+	// returned 407 Proxy Authentication Required. The implementation
+	// MUST issue all of its round-trips (e.g. NTLM Type 1 / Type 3)
+	// on the supplied RoundTripper; it must NOT re-dial. Iteration
+	// across multiple authenticators is the caller's job.
+	//
+	// The implementation MAY set request headers (typically
+	// Proxy-Authorization) on req before round-tripping. The picker
+	// clears Proxy-Authorization between attempts so a method
+	// doesn't have to.
+	//
+	// Body ownership: on success do() returns a non-nil response
+	// whose Body the CALLER is responsible for closing. On error
+	// do() returns (nil, err) and has cleaned up any internal state.
+	do(req *http.Request, rt http.RoundTripper) (*http.Response, error)
 }
 
 // Authentication-scheme tokens, lower-cased and centralised so the rest

@@ -47,6 +47,59 @@ static int hasCredential() {
     return (major == GSS_S_COMPLETE && lifetime > 0) ? 1 : 0;
 }
 
+// defaultPrincipal acquires the default Kerberos credential and writes its
+// printable principal name (e.g. "alice@CORP.EXAMPLE.COM") into the
+// caller-supplied buffer. Returns the number of bytes written, or 0 on
+// failure / no credential. The Go side parses the realm from this string.
+static size_t defaultPrincipal(char *buf, size_t buflen) {
+    OM_uint32 major, minor;
+    gss_cred_id_t cred = GSS_C_NO_CREDENTIAL;
+    gss_name_t name = GSS_C_NO_NAME;
+    gss_buffer_desc display = GSS_C_EMPTY_BUFFER;
+    size_t written = 0;
+
+    major = gss_acquire_cred(
+        &minor,
+        GSS_C_NO_NAME,
+        0,
+        GSS_C_NO_OID_SET,
+        GSS_C_INITIATE,
+        &cred,
+        NULL,
+        NULL
+    );
+    if (major != GSS_S_COMPLETE || cred == GSS_C_NO_CREDENTIAL) {
+        if (cred != GSS_C_NO_CREDENTIAL) {
+            gss_release_cred(&minor, &cred);
+        }
+        return 0;
+    }
+
+    major = gss_inquire_cred(&minor, cred, &name, NULL, NULL, NULL);
+    gss_release_cred(&minor, &cred);
+    if (major != GSS_S_COMPLETE || name == GSS_C_NO_NAME) {
+        if (name != GSS_C_NO_NAME) {
+            gss_release_name(&minor, &name);
+        }
+        return 0;
+    }
+
+    major = gss_display_name(&minor, name, &display, NULL);
+    gss_release_name(&minor, &name);
+    if (major != GSS_S_COMPLETE) {
+        gss_release_buffer(&minor, &display);
+        return 0;
+    }
+
+    if (display.length > 0 && display.length < buflen) {
+        memcpy(buf, display.value, display.length);
+        buf[display.length] = '\0';
+        written = display.length;
+    }
+    gss_release_buffer(&minor, &display);
+    return written;
+}
+
 // generateToken generates a SPNEGO token for the given service principal name.
 // The caller must free the returned token with free().
 // Returns 0 on success, non-zero GSS major status on failure.
@@ -263,6 +316,35 @@ func (n *negotiateAuthenticator) allowedHost(host string) bool {
 // tickets managed by Apple SSO and the Ticket Viewer app.
 func checkKerberosTicket() bool {
 	return C.hasCredential() == 1
+}
+
+// defaultKerberosRealm returns the lower-cased realm of the user's
+// default Kerberos credential (e.g. "corp.example.com" for a principal
+// alice@CORP.EXAMPLE.COM), or the empty string if no credential is
+// available or the principal name is malformed.
+//
+// Used by main.go to derive a sensible default for KERBEROS_SPN_ALLOWLIST
+// when the user hasn't set one explicitly: requesting Kerberos service
+// tickets within the user's own home realm is the security boundary
+// that actually matters for SPN coercion. Tickets for SPNs OUTSIDE the
+// home realm would have to come from a cross-realm trust, which is not
+// implicitly granted just because alpaca asked.
+func defaultKerberosRealm() string {
+	const buflen = 256
+	buf := make([]byte, buflen)
+	n := C.defaultPrincipal(
+		(*C.char)(unsafe.Pointer(&buf[0])),
+		C.size_t(buflen),
+	)
+	if n == 0 {
+		return ""
+	}
+	principal := string(buf[:n])
+	at := strings.LastIndex(principal, "@")
+	if at < 0 || at == len(principal)-1 {
+		return ""
+	}
+	return strings.ToLower(principal[at+1:])
 }
 
 // waitForKerberosTicket polls for a Kerberos ticket every second up to
