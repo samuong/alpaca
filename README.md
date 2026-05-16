@@ -33,7 +33,7 @@ $ go install github.com/samuong/alpaca/v2@latest
 ## Build from source
 
 If you'd like to build Alpaca from source, you'll need [Go](https://go.dev/)
-1.22.3 or later. CGO must be enabled:
+1.25.0 or later. CGO must be enabled:
 
 ```sh
 $ CGO_ENABLED=1 go build -v .

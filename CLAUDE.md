@@ -36,7 +36,7 @@ golangci-lint run
 alpaca/
 ├── .github/workflows/     # CI (ci.yml) and release (release.yml) pipelines
 ├── assets/                # Logo and banner images
-├── go.mod / go.sum        # Go module definition (Go 1.22.3+)
+├── go.mod / go.sum        # Go module definition (Go 1.25.0+)
 ├── main.go                # Entry point, CLI flags, server bootstrap
 ├── proxy.go               # Core proxy handler (CONNECT tunneling, request forwarding)
 ├── transport.go           # Low-level connection management for CONNECT tunnels
@@ -122,7 +122,7 @@ hosts that are out-of-policy.
 
 ### Requirements
 
-- **Go 1.22.3+**
+- **Go 1.25.0+**
 - **CGO_ENABLED=1** (required for builds and tests)
 
 ### Build
@@ -194,7 +194,7 @@ Runs on every push and PR to master:
 
 | Job      | What it does                                          |
 |----------|-------------------------------------------------------|
-| format   | Validates `gofmt` on Ubuntu with Go 1.22             |
+| format   | Validates `gofmt` on Ubuntu with Go 1.25             |
 | lint     | Runs `golangci-lint`                                  |
 | test     | Runs `go test ./...` on macOS, Ubuntu (x86/ARM), Windows |
 | build    | Cross-compiles for darwin/linux/windows (amd64/arm64) |

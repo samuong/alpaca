@@ -4,6 +4,13 @@ This directory contains the Docker fixture that backs `kerberos_e2e_test.go`.
 It is intentionally separate from the standard test suite because it requires
 Docker (or Podman with a running machine) and takes ~30s on first run.
 
+**Platform scope:** the test is gated on `//go:build e2e && darwin` because it
+exercises alpaca's macOS GSS.framework Negotiate path. The Linux/Windows
+Kerberos backends are not implemented in the same PR and would need their
+own host-side test rigs (a domain-joined Windows VM for SSPI, or `gokrb5`
+hooked into a krb5cc fixture for Linux); the Docker container itself is
+just a stable KDC + squid for the host's Kerberos client to talk to.
+
 ## What it does
 
 The Dockerfile builds a single image that runs:

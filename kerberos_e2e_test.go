@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build e2e
+//go:build e2e && darwin
 
 // End-to-end test fixture for alpaca's multi-method proxy authentication.
 //
@@ -22,8 +22,13 @@
 // the multi-auth chain, and the security invariants (downgrade refusal,
 // SPN allowlist enforcement, ticket re-check).
 //
-// Build tag is "e2e" so this test is invisible to the default `go test`
-// runs. Run it explicitly with:
+// Build tag is "e2e && darwin": the test exercises alpaca's macOS
+// GSS.framework Negotiate path, which is the only Kerberos backend
+// implemented in this PR. On other platforms newNegotiateAuthenticator
+// returns nil so there's nothing to exercise; the build constraint
+// keeps `go test -tags=e2e ./...` working transparently elsewhere.
+//
+// Run with:
 //
 //   CGO_ENABLED=1 go test -tags=e2e -run TestKerberosE2E -v .
 //
@@ -124,8 +129,8 @@ func setupFixture(t *testing.T) *e2eFixture {
 	requireBinary(t, "kinit")
 
 	fx := &e2eFixture{
-		t:           t,
-		dockerBin:   docker,
+		t:         t,
+		dockerBin: docker,
 		// The container bootstrap script starts a Python http.server
 		// on 127.0.0.1:8080 inside the container. squid forwards to
 		// it once authentication succeeds, so a 200 from this URL
