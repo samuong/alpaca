@@ -89,3 +89,63 @@ func TestNtlmAuth(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Access granted", string(body))
 }
+
+func TestFindNTLMChallenge(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers []string
+		want    string
+	}{
+		{
+			name:    "single NTLM challenge",
+			headers: []string{"NTLM TlRMTVNTUAACAAAA"},
+			want:    "TlRMTVNTUAACAAAA",
+		},
+		{
+			name: "NTLM follows Negotiate (multi-auth proxy)",
+			// Real-world ordering from squid+kerberos+ntlm: Negotiate
+			// is advertised first, then NTLM with the Type 2 token,
+			// then Basic. A naive Header.Get() would return the
+			// Negotiate value, miss the NTLM token, and break the
+			// challenge-response.
+			headers: []string{
+				"Negotiate",
+				"NTLM TlRMTVNTUAACAAAA",
+				"Basic realm=\"proxy\"",
+			},
+			want: "TlRMTVNTUAACAAAA",
+		},
+		{
+			name: "case-insensitive scheme prefix",
+			headers: []string{
+				"Negotiate",
+				"ntlm tOkEnFoo",
+			},
+			want: "tOkEnFoo",
+		},
+		{
+			name:    "no NTLM challenge present",
+			headers: []string{"Negotiate", "Basic realm=\"proxy\""},
+			want:    "",
+		},
+		{
+			name:    "bare NTLM (re-advertisement, no token)",
+			headers: []string{"NTLM"},
+			want:    "",
+		},
+		{
+			name:    "no Proxy-Authenticate header at all",
+			headers: nil,
+			want:    "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := make(http.Header)
+			for _, v := range tc.headers {
+				h.Add("Proxy-Authenticate", v)
+			}
+			assert.Equal(t, tc.want, findNTLMChallenge(h))
+		})
+	}
+}
