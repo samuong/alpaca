@@ -61,7 +61,7 @@ func sendProxyAuthRequired(w http.ResponseWriter) {
 	w.Header().Set("Proxy-Authenticate", "NTLM")
 	w.Header().Set("Connection", "close")
 	w.WriteHeader(http.StatusProxyAuthRequired)
-	fmt.Fprintf(w, "<html><body>oh noes!</body></html>")
+	_, _ = fmt.Fprintf(w, "<html><body>oh noes!</body></html>")
 }
 
 func sendChallengeResponse(w http.ResponseWriter) {
@@ -83,7 +83,7 @@ func TestNtlmAuth(t *testing.T) {
 	auth := &authenticator{"isis", "malory", ntlmssp.GetNtlmHash("guest")}
 	resp, err = auth.do(req, tr)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)

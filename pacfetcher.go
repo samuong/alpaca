@@ -80,7 +80,7 @@ func requireOK(resp *http.Response, err error) (*http.Response, error) {
 	if err != nil {
 		return resp, err
 	} else if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("expected status 200 OK, got %s", resp.Status)
 	} else {
 		return resp, nil
@@ -134,6 +134,12 @@ func (pf *pacFetcher) download() []byte {
 	}
 	pf.connected = false
 
+	// We've just detected a change in network state, so close any "idle"
+	// connections from the previous network. This forces a fresh DNS
+	// lookup and TCP dial during the next PAC download. For context, see
+	// <https://github.com/samuong/alpaca/issues/165>.
+	pf.client.CloseIdleConnections()
+
 	pacurl, err := pf.pacFinder.findPACURL()
 	if err != nil {
 		log.Printf("Error while trying to detect PAC URL: %v", err)
@@ -168,7 +174,7 @@ func (pf *pacFetcher) download() []byte {
 			return nil
 		}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, maxResponseBytes)
 	if err == io.EOF {

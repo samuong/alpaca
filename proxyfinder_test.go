@@ -29,20 +29,23 @@ func TestFindProxyForRequest(t *testing.T) {
 	tests := []struct {
 		name        string
 		body        string
+		enableSocks bool
 		expectError bool
 		expected    string
 	}{
-		{"JavaScriptError", "throw 'error'", true, ""},
-		{"MultipleBlocks", "return 'PROXY proxy.test:1; DIRECT'", false, "proxy.test:1"},
-		{"Direct", "return 'DIRECT'", false, ""},
-		{"Proxy", "return 'PROXY proxy.test:2'", false, "proxy.test:2"},
-		{"ProxyWithoutPort", "return 'PROXY proxy.test'", false, "proxy.test:80"},
-		{"Socks", "return 'SOCKS socksproxy.test:3'", true, "socksproxy.test:3"},
-		{"Http", "return 'HTTP http.test:4'", false, "http.test:4"},
-		{"HttpWithoutPort", "return 'HTTP http.test'", false, "http.test:80"},
-		{"Https", "return 'HTTPS https.test:5'", false, "https.test:5"},
-		{"HttpsWithoutPort", "return 'HTTPS https.test'", false, "https.test:443"},
-		{"InvalidReturnValue", "return 'INVALID RETURN VALUE'", true, ""},
+		{"JavaScriptError", "throw 'error'", false, true, ""},
+		{"MultipleBlocks", "return 'PROXY proxy.test:1; DIRECT'", false, false, "proxy.test:1"},
+		{"Direct", "return 'DIRECT'", false, false, ""},
+		{"Proxy", "return 'PROXY proxy.test:2'", false, false, "proxy.test:2"},
+		{"ProxyWithoutPort", "return 'PROXY proxy.test'", false, false, "proxy.test:80"},
+		{"Socks", "return 'SOCKS socksproxy.test:3'", false, true, "socksproxy.test:3"},
+		{"Socks5Disabled", "return 'SOCKS5 socksproxy.test:1080'", false, true, ""},
+		{"Socks5Enabled", "return 'SOCKS5 socksproxy.test:1080'", true, false, "socksproxy.test:1080"},
+		{"Http", "return 'HTTP http.test:4'", false, false, "http.test:4"},
+		{"HttpWithoutPort", "return 'HTTP http.test'", false, false, "http.test:80"},
+		{"Https", "return 'HTTPS https.test:5'", false, false, "https.test:5"},
+		{"HttpsWithoutPort", "return 'HTTPS https.test'", false, false, "https.test:443"},
+		{"InvalidReturnValue", "return 'INVALID RETURN VALUE'", false, true, ""},
 	}
 	for i, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -50,7 +53,7 @@ func TestFindProxyForRequest(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(pacjsHandler(js)))
 			defer server.Close()
 			pw := NewPACWrapper(PACData{Port: 1})
-			pf := NewProxyFinder(server.URL, pw)
+			pf := NewProxyFinder(server.URL, pw, test.enableSocks)
 			req := httptest.NewRequest(http.MethodGet, "https://www.test", nil)
 			ctx := context.WithValue(req.Context(), contextKeyID, i)
 			req = req.WithContext(ctx)
@@ -73,21 +76,22 @@ func TestFindProxyForRequest(t *testing.T) {
 func TestFallbackToDirectWhenNotConnected(t *testing.T) {
 	url := "http://pacserver.invalid/nonexistent.pac"
 	pw := NewPACWrapper(PACData{Port: 1})
-	pf := NewProxyFinder(url, pw)
+	pf := NewProxyFinder(url, pw, false)
 	req := httptest.NewRequest(http.MethodGet, "http://www.test", nil)
 	proxy, err := pf.findProxyForRequest(req)
 	require.NoError(t, err)
 	assert.Nil(t, proxy)
 }
 
-// Removed TestFallbackToDirectWhenNoPACURL - behaviour is fallback to system default when no PACURL, test case TestFallbackToDefaultWhenNoPACUrl
+// Removed TestFallbackToDirectWhenNoPACURL. Behaviour is fallback to system default when no
+// PACURL; see test case TestFallbackToDefaultWhenNoPACUrl.
 
 func TestSkipBadProxies(t *testing.T) {
 	js := `function FindProxyForURL(url, host) { return "PROXY primary:80; PROXY backup:80" }`
 	server := httptest.NewServer(http.HandlerFunc(pacjsHandler(js)))
 	defer server.Close()
 	pw := NewPACWrapper(PACData{Port: 1})
-	pf := NewProxyFinder(server.URL, pw)
+	pf := NewProxyFinder(server.URL, pw, false)
 	req := httptest.NewRequest(http.MethodGet, "https://www.test", nil)
 	ctx := context.WithValue(req.Context(), contextKeyID, 0)
 	req = req.WithContext(ctx)

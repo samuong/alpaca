@@ -30,6 +30,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/things-go/go-socks5"
 )
 
 type requestLogger struct {
@@ -111,7 +112,7 @@ func TestProxy(t *testing.T) {
 			}
 			resp, err := client.Get(test.server.URL)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer resp.Body.Close() //nolint:errcheck
 			assert.Equal(t, test.requests, r.requests)
 		})
 	}
@@ -134,7 +135,7 @@ func TestProxyHTTP2(t *testing.T) {
 	}
 	resp, err := client.Get(server.URL)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	assert.Equal(t, 2, resp.ProtoMajor)
 	assert.Equal(t, []string{"CONNECT to proxy", "GET to server"}, r.requests)
 }
@@ -176,7 +177,7 @@ func TestGetOriginURLsNotProxied(t *testing.T) {
 	client := &http.Client{Transport: &http.Transport{}}
 	resp, err := client.Get(proxy.URL + "/origin")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
@@ -208,7 +209,7 @@ func testHopByHopHeaders(t *testing.T, method, url string, proxy proxyFunc) {
 	tr := &http.Transport{Proxy: proxy}
 	resp, err := tr.RoundTrip(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.NotContains(t, resp.Header, "Connection")
@@ -246,7 +247,7 @@ func TestDeleteConnectionTokens(t *testing.T) {
 
 func TestCloseFromOneSideResultsInEOFOnOtherSide(t *testing.T) {
 	closeConnection := func(conn net.Conn) {
-		conn.Close()
+		_ = conn.Close()
 	}
 	assertEOF := func(conn net.Conn) {
 		_, err := bufio.NewReader(conn).Peek(1)
@@ -260,12 +261,12 @@ func testProxyTunnel(t *testing.T, onServer, onClient func(conn net.Conn)) {
 	// Set up a Listener to act as a server, which we'll connect to via the proxy.
 	server, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	defer server.Close()
+	defer server.Close() //nolint:errcheck
 	proxy := httptest.NewServer(newDirectProxy())
-	defer proxy.Close()
+	defer proxy.Close() //nolint:errcheck
 	client, err := net.Dial("tcp", proxy.Listener.Addr().String())
 	require.NoError(t, err)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 	// The server just accepts a connection and calls the callback.
 	done := make(chan struct{})
 	go func() {
@@ -290,26 +291,26 @@ func testProxyTunnel(t *testing.T, onServer, onClient func(conn net.Conn)) {
 func TestConnectResponseHeadersWithOneProxy(t *testing.T) {
 	server, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	defer server.Close()
+	defer server.Close() //nolint:errcheck
 	proxy := httptest.NewServer(newDirectProxy())
-	defer proxy.Close()
+	defer proxy.Close() //nolint:errcheck
 	client, err := net.Dial("tcp", proxy.Listener.Addr().String())
 	require.NoError(t, err)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 	testConnectResponseHeaders(t, server.Addr().String(), client)
 }
 
 func TestConnectResponseHeadersWithTwoProxies(t *testing.T) {
 	server, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	defer server.Close()
+	defer server.Close() //nolint:errcheck
 	parent := httptest.NewServer(newDirectProxy())
-	defer parent.Close()
+	defer parent.Close() //nolint:errcheck
 	child := httptest.NewServer(newChildProxy(parent))
-	defer child.Close()
+	defer child.Close() //nolint:errcheck
 	client, err := net.Dial("tcp", child.Listener.Addr().String())
 	require.NoError(t, err)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 	testConnectResponseHeaders(t, server.Addr().String(), client)
 }
 
@@ -330,17 +331,17 @@ func TestConnectResponseHasCorrectNewlines(t *testing.T) {
 	// See https://github.com/samuong/alpaca/issues/29 for some context behind this test.
 	server, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
-	defer server.Close()
+	defer server.Close() //nolint:errcheck
 	go func() {
 		conn, err := server.Accept()
 		require.NoError(t, err)
-		conn.Close()
+		_ = conn.Close()
 	}()
 	proxy := httptest.NewServer(newDirectProxy())
 	defer proxy.Close()
 	client, err := net.Dial("tcp", proxy.Listener.Addr().String())
 	require.NoError(t, err)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck
 	req := fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", server.Addr().String())
 	_, err = client.Write([]byte(req))
 	require.NoError(t, err)
@@ -373,4 +374,55 @@ func TestTransportReturnsProxyConnectOpError(t *testing.T) {
 	require.Error(t, err)
 	oe := err.(*net.OpError)
 	assert.Equal(t, "proxyconnect", oe.Op)
+}
+
+func setupSOCKS5TestServers(t *testing.T) *httptest.Server {
+	// 1. Create SOCKS5 server
+	server := socks5.NewServer()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(l) }()
+	t.Cleanup(func() { _ = l.Close() })
+	socks5Addr := l.Addr().String()
+
+	// 3. Build minimal Alpaca handler
+	proxyHandler := NewProxyHandler(nil, func(*http.Request) (*url.URL, error) {
+		return url.Parse("socks5://" + socks5Addr)
+	}, func(string) {})
+
+	handler := proxyHandler.WrapHandler(http.NotFoundHandler())
+
+	// 4. Create Alpaca test server
+	alpacaServer := httptest.NewServer(handler)
+	t.Cleanup(func() { alpacaServer.Close() })
+
+	return alpacaServer
+}
+
+func TestSOCKS5Proxy(t *testing.T) {
+	alpacaServer := setupSOCKS5TestServers(t)
+
+	// Set up a destination server
+	destServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := fmt.Fprint(w, r.URL.Path)
+		require.NoError(t, err)
+	}))
+	t.Cleanup(func() { destServer.Close() })
+
+	// Make a request through the Alpaca proxy
+	proxyURL, err := url.Parse(alpacaServer.URL)
+	require.NoError(t, err)
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+	}
+	resp, err := client.Get(destServer.URL + "/testpath")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, resp.Body.Close()) }()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "/testpath", string(body))
 }

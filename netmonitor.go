@@ -96,7 +96,7 @@ func (nm *netMonitorImpl) probeRoute(host string, ipv4only bool) net.IP {
 	if err != nil {
 		return nil
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 	local, ok := conn.LocalAddr().(*net.UDPAddr)
 	if !ok {
 		// Since we called dial with network set to "udp4" or "udp", we

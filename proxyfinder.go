@@ -36,15 +36,16 @@ func getProxyFromContext(req *http.Request) (*url.URL, error) {
 }
 
 type ProxyFinder struct {
-	runner  *PACRunner
-	fetcher *pacFetcher
-	wrapper *PACWrapper
-	blocked *blocklist
+	runner      *PACRunner
+	fetcher     *pacFetcher
+	wrapper     *PACWrapper
+	blocked     *blocklist
+	enableSocks bool
 	sync.Mutex
 }
 
-func NewProxyFinder(pacurl string, wrapper *PACWrapper) *ProxyFinder {
-	pf := &ProxyFinder{wrapper: wrapper, blocked: newBlocklist()}
+func NewProxyFinder(pacurl string, wrapper *PACWrapper, enableSocks bool) *ProxyFinder {
+	pf := &ProxyFinder{wrapper: wrapper, blocked: newBlocklist(), enableSocks: enableSocks}
 	pf.runner = new(PACRunner)
 	pf.fetcher = newPACFetcher(pacurl)
 	pf.checkForUpdates()
@@ -118,6 +119,17 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 		} else if fields[0] == "HTTPS" {
 			scheme = "https"
 			defaultPort = "443"
+		} else if fields[0] == "SOCKS5" {
+			if !pf.enableSocks {
+				log.Printf(
+					"[%d] Ignoring SOCKS5 proxy: %q "+
+						"(restart Alpaca with -enable-socks to allow SOCKS5 proxies from PAC files)",
+					id, elem,
+				)
+				continue
+			}
+			scheme = "socks5"
+			defaultPort = "1080"
 		} else {
 			log.Printf("[%d] Couldn't parse proxy: %q", id, elem)
 			continue

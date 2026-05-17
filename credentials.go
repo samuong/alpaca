@@ -53,7 +53,7 @@ func (t *terminal) forUser(domain, username string) *terminal {
 }
 
 func (t *terminal) getCredentials() (*authenticator, error) {
-	fmt.Fprintf(t.stdout, "Password (for %s\\%s): ", t.domain, t.username)
+	_, _ = fmt.Fprintf(t.stdout, "Password (for %s\\%s): ", t.domain, t.username)
 	buf, err := t.readPassword()
 	fmt.Println()
 	if err != nil {

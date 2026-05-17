@@ -29,7 +29,7 @@ import (
 func TestFindPACURL(t *testing.T) {
 	dir, err := os.MkdirTemp("", "alpaca")
 	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck
 	oldpath := os.Getenv("PATH")
 	defer require.NoError(t, os.Setenv("PATH", oldpath))
 
@@ -47,7 +47,7 @@ func TestFindPACURL(t *testing.T) {
 func TestFindPACURLWhenGsettingsIsntAvailable(t *testing.T) {
 	dir, err := os.MkdirTemp("", "alpaca")
 	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	defer os.RemoveAll(dir) //nolint:errcheck
 	oldpath := os.Getenv("PATH")
 	defer require.NoError(t, os.Setenv("PATH", oldpath))
 	require.NoError(t, os.Setenv("PATH", dir))

@@ -65,6 +65,7 @@ func main() {
 	kerberosWait := flag.Int("w", 30, "seconds to wait for a Kerberos ticket (macOS only)")
 	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
 	version := flag.Bool("version", false, "print version number")
+	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
 	flag.Parse()
 
 	if *quiet {
@@ -135,7 +136,7 @@ func main() {
 
 	errch := make(chan error)
 
-	s := createServer(*port, *pacurl, auth)
+	s := createServer(*port, *pacurl, auth, *enableSocks)
 	for _, host := range hosts {
 		address := net.JoinHostPort(host, strconv.Itoa(*port))
 		for _, network := range networks(host) {
@@ -154,9 +155,9 @@ func main() {
 	log.Fatal(<-errch)
 }
 
-func createServer(port int, pacurl string, auth proxyAuthenticator) *http.Server {
+func createServer(port int, pacurl string, auth proxyAuthenticator, enableSocks bool) *http.Server {
 	pacWrapper := NewPACWrapper(PACData{Port: port})
-	proxyFinder := NewProxyFinder(pacurl, pacWrapper)
+	proxyFinder := NewProxyFinder(pacurl, pacWrapper, enableSocks)
 	proxyHandler := NewProxyHandler(auth, getProxyFromContext, proxyFinder.blockProxy)
 	mux := http.NewServeMux()
 	pacWrapper.SetupHandlers(mux)
