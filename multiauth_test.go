@@ -123,7 +123,7 @@ func TestMultiAuthCachesMethod(t *testing.T) {
 	req1 = req1.WithContext(ctx)
 	resp1, err := auth.do(req1, tr)
 	require.NoError(t, err)
-	resp1.Body.Close()
+	resp1.Body.Close() //nolint:errcheck
 	assert.Equal(t, http.StatusOK, resp1.StatusCode)
 	assert.Equal(t, 1, ntlmAuth.calls)
 
@@ -132,7 +132,7 @@ func TestMultiAuthCachesMethod(t *testing.T) {
 	req2 = req2.WithContext(ctx)
 	resp2, err := auth.do(req2, tr)
 	require.NoError(t, err)
-	resp2.Body.Close()
+	resp2.Body.Close() //nolint:errcheck
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
 	assert.Equal(t, 2, ntlmAuth.calls)
 	assert.Equal(t, 0, basicAuth.calls)

@@ -37,16 +37,16 @@ func (s basicAuthServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if !strings.HasPrefix(hdr, "Basic ") {
 		w.Header().Set("Proxy-Authenticate", "Basic realm=\"proxy\"")
 		w.WriteHeader(http.StatusProxyAuthRequired)
-		fmt.Fprint(w, "Proxy authentication required")
+		fmt.Fprint(w, "Proxy authentication required") //nolint:errcheck
 		return
 	}
 	if strings.TrimPrefix(hdr, "Basic ") != s.expected {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, "Invalid credentials")
+		fmt.Fprint(w, "Invalid credentials") //nolint:errcheck
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, "Access granted")
+	fmt.Fprint(w, "Access granted") //nolint:errcheck
 }
 
 func TestBasicAuth(t *testing.T) {
@@ -65,7 +65,7 @@ func TestBasicAuth(t *testing.T) {
 	auth := newBasicAuthenticator(creds)
 	resp, err = auth.do(req, tr)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 

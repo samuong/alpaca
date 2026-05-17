@@ -83,7 +83,7 @@ func (m *multiAuthenticator) do(req *http.Request, rt http.RoundTripper) (*http.
 		return resp, nil
 	}
 	schemes := parseProxyAuthenticateSchemes(resp.Header)
-	resp.Body.Close()
+	resp.Body.Close() //nolint:errcheck
 
 	// Filter methods to only those the proxy advertises. If the proxy
 	// didn't send any Proxy-Authenticate headers, fall back to trying all.
@@ -114,7 +114,7 @@ func (m *multiAuthenticator) do(req *http.Request, rt http.RoundTripper) (*http.
 		}
 		// 407 — this method was rejected, try the next one.
 		if i < len(methods)-1 {
-			resp.Body.Close()
+			resp.Body.Close() //nolint:errcheck
 		} else {
 			// Last method also failed, return the 407 as-is.
 			return resp, nil
