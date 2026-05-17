@@ -8,12 +8,13 @@ require (
 	github.com/robertkrimen/otto v0.5.1
 	github.com/samuong/go-ntlmssp v0.0.0-20240616070040-65a20607c744
 	github.com/stretchr/testify v1.11.1
+	github.com/things-go/go-socks5 v0.1.0
 	github.com/zalando/go-keyring v0.2.8
+	golang.org/x/net v0.52.0
 	golang.org/x/term v0.42.0
 )
 
 require (
-	github.com/alessio/shellescape v1.4.2 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect

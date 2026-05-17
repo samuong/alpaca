@@ -61,6 +61,7 @@ func main() {
 	username := flag.String("u", whoAmI(), "username of the proxy account (for NTLM auth)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
 	version := flag.Bool("version", false, "print version number")
+	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
 	flag.Parse()
 
 	// default to localhost if no hosts are specified
@@ -103,7 +104,7 @@ func main() {
 
 	errch := make(chan error)
 
-	s := createServer(*port, *pacurl, a)
+	s := createServer(*port, *pacurl, a, *enableSocks)
 	for _, host := range hosts {
 		address := net.JoinHostPort(host, strconv.Itoa(*port))
 		for _, network := range networks(host) {
@@ -122,9 +123,9 @@ func main() {
 	log.Fatal(<-errch)
 }
 
-func createServer(port int, pacurl string, a *authenticator) *http.Server {
+func createServer(port int, pacurl string, a *authenticator, enableSocks bool) *http.Server {
 	pacWrapper := NewPACWrapper(PACData{Port: port})
-	proxyFinder := NewProxyFinder(pacurl, pacWrapper)
+	proxyFinder := NewProxyFinder(pacurl, pacWrapper, enableSocks)
 	proxyHandler := NewProxyHandler(a, getProxyFromContext, proxyFinder.blockProxy)
 	mux := http.NewServeMux()
 	pacWrapper.SetupHandlers(mux)
