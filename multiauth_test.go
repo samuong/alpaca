@@ -52,14 +52,14 @@ func (p *multiAuthProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	auth := req.Header.Get("Proxy-Authorization")
 	if auth == p.accept {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "OK")
+		fmt.Fprint(w, "OK") //nolint:errcheck
 		return
 	}
 	for _, s := range p.schemes {
 		w.Header().Add("Proxy-Authenticate", s)
 	}
 	w.WriteHeader(http.StatusProxyAuthRequired)
-	fmt.Fprint(w, "auth required")
+	fmt.Fprint(w, "auth required") //nolint:errcheck
 }
 
 func TestNewMultiAuthenticatorNil(t *testing.T) {
@@ -95,7 +95,7 @@ func TestMultiAuthSelectsByProxyAuthenticate(t *testing.T) {
 	tr := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 	resp, err := auth.do(req, tr)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	// NTLM should not have been tried because the proxy only advertises Basic.
 	assert.Equal(t, 0, ntlmAuth.calls)
@@ -123,7 +123,7 @@ func TestMultiAuthCachesMethod(t *testing.T) {
 	req1 = req1.WithContext(ctx)
 	resp1, err := auth.do(req1, tr)
 	require.NoError(t, err)
-	resp1.Body.Close()
+	resp1.Body.Close() //nolint:errcheck
 	assert.Equal(t, http.StatusOK, resp1.StatusCode)
 	assert.Equal(t, 1, ntlmAuth.calls)
 
@@ -132,7 +132,7 @@ func TestMultiAuthCachesMethod(t *testing.T) {
 	req2 = req2.WithContext(ctx)
 	resp2, err := auth.do(req2, tr)
 	require.NoError(t, err)
-	resp2.Body.Close()
+	resp2.Body.Close() //nolint:errcheck
 	assert.Equal(t, http.StatusOK, resp2.StatusCode)
 	assert.Equal(t, 2, ntlmAuth.calls)
 	assert.Equal(t, 0, basicAuth.calls)
@@ -165,7 +165,7 @@ func TestMultiAuthFallsBackWithoutProxyAuthenticate(t *testing.T) {
 	tr := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 	resp, err := auth.do(req, tr)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	// Both should be tried since there's no Proxy-Authenticate to filter on.
 	assert.Equal(t, 1, ntlmAuth.calls)
