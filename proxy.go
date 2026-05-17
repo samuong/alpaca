@@ -152,6 +152,10 @@ func connectDirect(req *http.Request) (net.Conn, error) {
 		log.Printf("[%d] Error dialling host %s: %v", id, req.Host, err)
 	}
 	return server, err
+}
+
+func connectViaProxy(req *http.Request, proxyURL *url.URL, auth proxyAuthenticator) (net.Conn, error) {
+	id := req.Context().Value(contextKeyID)
 	var tr transport
 	defer tr.Close() //nolint:errcheck
 	if proxyURL.Scheme == "socks5" {
@@ -165,10 +169,6 @@ func connectDirect(req *http.Request) (net.Conn, error) {
 		}
 		return conn, nil
 	}
-}
-
-func connectViaProxy(req *http.Request, proxyURL *url.URL, auth proxyAuthenticator) (net.Conn, error) {
-	id := req.Context().Value(contextKeyID)
 	if err := tr.dial(proxyURL); err != nil {
 		log.Printf("[%d] Error dialling proxy %s: %v", id, proxyURL.Host, err)
 		return nil, err
