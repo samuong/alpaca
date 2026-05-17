@@ -32,6 +32,8 @@ type authenticator struct {
 	hash     []byte
 }
 
+func (a authenticator) scheme() string { return "NTLM" }
+
 func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
 	hostname, _ := os.Hostname() // in case of error, just use the zero value ("") as hostname
 	negotiate, err := ntlmssp.NewNegotiateMessage(a.domain, hostname)

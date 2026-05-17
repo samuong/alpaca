@@ -29,6 +29,21 @@ install using:
 $ go install github.com/samuong/alpaca/v2@latest
 ```
 
+## Build from source
+
+If you'd like to build Alpaca from source, you'll need [Go](https://go.dev/)
+1.22.3 or later. CGO must be enabled:
+
+```sh
+$ CGO_ENABLED=1 go build -v .
+```
+
+To run the tests:
+
+```sh
+$ CGO_ENABLED=1 go test ./...
+```
+
 ## Download Binary
 
 Alpaca can be downloaded from the [GitHub releases page][1].
@@ -43,9 +58,14 @@ Start Alpaca by running the `alpaca` binary.
 
 If the proxy server requires valid authentication credentials, you can provide them by means of:
 
-- the shell prompt, if `-d` is passed,
-- the shell environment, if `NTLM_CREDENTIALS` is set,
+- basic proxy authentication, if `BASIC_CREDENTIALS=login:password` is set,
+- the shell prompt (for NTLM), if `-d` is passed,
+- the shell environment (for NTLM), if `NTLM_CREDENTIALS` is set,
 - the system keyring (macOS, Windows and Linux/GNOME supported), if none of the above applies.
+
+Multiple authentication methods can be enabled simultaneously. The multi-authenticator
+selects methods based on the proxy's `Proxy-Authenticate` response header, trying them in
+order (Negotiate, NTLM, Basic) and caching which method works per proxy.
 
 Otherwise, the authentication with proxy will be simply ignored.
 
@@ -102,6 +122,22 @@ $ alpaca
 On macOS and Linux/GNOME systems, Alpaca uses the PAC URL from your system settings.
 If you'd like to override this, or if Alpaca fails to detect your settings, you
 can set this manually using the `-C` flag.
+
+### Command-line flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-l` | `localhost` | Address to listen on (can be specified multiple times) |
+| `-p` | `3128` | Port number to listen on |
+| `-C` | (none) | URL of proxy auto-config (PAC) file |
+| `-d` | (none) | Domain of the proxy account (for NTLM auth) |
+| `-u` | current user | Username for proxy auth (NTLM) |
+| `-b` | (none) | `login:password` for basic proxy auth |
+| `-H` | `false` | Print hashed NTLM credentials and exit |
+| `-k` | `false` | Enable Kerberos/Negotiate proxy authentication (macOS only) |
+| `-w` | `30` | Seconds to wait for a Kerberos ticket (macOS only) |
+| `-q` | `false` | Quiet mode, suppress all log output |
+| `-version` | `false` | Print version and exit |
 
 ---
 
