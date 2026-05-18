@@ -119,7 +119,19 @@ func main() {
 		var err error
 		a, err = src.getCredentials()
 		if err != nil {
-			log.Printf("Credentials not found, disabling proxy auth: %v", err)
+			// The keyring source returns an error whenever NoMAD
+			// isn't installed and configured — the dominant case
+			// for any developer Mac without the specific NoMAD
+			// plist. The terminal and env-var sources return an
+			// error when the user supplied creds but they're
+			// malformed; today both cases land on this branch
+			// indistinguishably. Log a calm one-liner so a user
+			// without NoMAD doesn't see what looks like an error,
+			// and put the underlying detail behind --debug for the
+			// "I configured something and it isn't taking" case.
+			log.Println("NTLM credentials not available from the " +
+				"configured source")
+			debugf("NTLM credential source returned: %v", err)
 		}
 	}
 
