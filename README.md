@@ -270,7 +270,6 @@ can set this manually using the `-C` flag.
 | `-H` | `false` | Print hashed NTLM credentials and exit |
 | `-w` | `0` | Seconds to wait at startup for a Kerberos ticket (macOS only). Default `0` means "don't wait — only use a ticket if one is already present" |
 | `--no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS only) |
-| `-k` | `false` | **Deprecated.** Equivalent to `-w 30`. Negotiate is auto-detected without `-k` whenever a Kerberos ticket is present |
 | `-q` | `false` | Quiet mode, suppress all log output |
 | `--debug` | `false` | Verbose troubleshooting output. Adds `DEBUG:`-prefixed lines explaining picker and auth decisions (which methods were considered for each 407, the resolved SPN allowlist, the SPN alpaca asked GSS for, etc.). Use when diagnosing "why didn't auth work" |
 | `-version` | `false` | Print version and exit |

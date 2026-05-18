@@ -215,7 +215,6 @@ Triggered on tags matching `v*`. Creates a GitHub release and uploads platform-s
 | `-H`        | false        | Print hashed NTLM credentials and exit         |
 | `-w`        | `0`          | Seconds to wait at startup for a Kerberos ticket (macOS) |
 | `--no-kerberos` | false    | Disable Kerberos auto-detection (macOS)        |
-| `-k`        | false        | **Deprecated.** Equivalent to `-w 30`. Auto-detect makes it unnecessary |
 | `-q`        | false        | Quiet mode — suppress all log output           |
 | `--debug`   | false        | Verbose troubleshooting output (DEBUG-prefixed lines explaining picker + auth decisions) |
 | `-version`  | false        | Print version and exit                         |

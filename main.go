@@ -74,11 +74,6 @@ func main() {
 			"-q false.")
 	version := flag.Bool("version", false, "print version number")
 	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
-	// -k is retained for backward compatibility: it sets the default
-	// Kerberos wait time to 30s if -w is not also specified.
-	kerberos := flag.Bool("k", false,
-		"deprecated: enable Kerberos wait at startup (macOS only). "+
-			"Negotiate is auto-detected when a ticket is present; pass -w to wait.")
 	flag.Parse()
 
 	if *quiet {
@@ -154,17 +149,7 @@ func main() {
 	// signed in" case — alpaca behaves like the keyring source.
 	var methods []proxyAuthenticator
 	if !*noKerberos {
-		wait := *kerberosWait
-		if *kerberos && wait == 0 {
-			// Backward compat for the legacy -k flag.
-			wait = 30
-			fmt.Fprintln(os.Stderr,
-				"Note: -k is deprecated; pass -w 30 to retain the "+
-					"previous startup-wait behaviour. Negotiate is "+
-					"auto-detected without -k whenever a Kerberos "+
-					"ticket is present.")
-		}
-		if neg := newNegotiateAuthenticator(wait); neg != nil {
+		if neg := newNegotiateAuthenticator(*kerberosWait); neg != nil {
 			log.Println("Kerberos/Negotiate authentication available")
 			methods = append(methods, neg)
 		}
