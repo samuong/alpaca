@@ -19,15 +19,15 @@ import "log"
 // debugEnabled is set from main.go's --debug flag. When true, debugf
 // emits "DEBUG: " prefixed log lines that explain alpaca's
 // decision-making in detail — which auth methods the picker
-// considered for a 407, what the resolved SPN allowlist is, which
+// considered for a 407, the proxy-auth allowlist in effect, which
 // SPN alpaca asked GSS for, and so on. When false, debugf is a
 // no-op.
 //
 // Always-on log lines (`log.Printf` / `log.Println` directly) are
 // reserved for events a user troubleshooting a misconfiguration
-// needs to see without re-launching alpaca — e.g. "Kerberos SPN
-// allowlist excludes …" tells the user exactly why Negotiate
-// declined and how to fix it. Anything noisier than that goes
+// needs to see without re-launching alpaca — e.g. "Proxy ... not in
+// proxy-auth allowlist ..." tells the user exactly why authentication
+// was skipped and how to fix it. Anything noisier than that goes
 // behind --debug to keep steady-state logs scannable.
 var debugEnabled bool
 

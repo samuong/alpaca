@@ -68,10 +68,11 @@ func main() {
 	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
 	debug := flag.Bool("debug", false,
 		"verbose troubleshooting log output. Adds DEBUG-prefixed "+
-			"lines explaining which auth methods the picker "+
-			"considered for each 407, the resolved SPN allowlist, "+
-			"the SPN alpaca asked GSS for, and so on. Implies "+
-			"-q false.")
+			"lines explaining the picker's per-407 reasoning: "+
+			"schemes the proxy advertised, the proxy-auth "+
+			"allowlist in effect, the SPN alpaca asked the KDC "+
+			"for, and the candidate methods chosen. Silently "+
+			"suppressed by -q.")
 	version := flag.Bool("version", false, "print version number")
 	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
 	authAllowlist := flag.String("proxy-auth-allowlist", "",
@@ -158,6 +159,16 @@ func main() {
 		if neg := newNegotiateAuthenticator(*kerberosWait); neg != nil {
 			log.Println("Kerberos/Negotiate authentication available")
 			methods = append(methods, neg)
+		} else if *kerberosWait > 0 {
+			// newNegotiateAuthenticator returns nil on platforms
+			// that don't have a Kerberos backend implemented
+			// (currently anything other than macOS). The user
+			// passed -w expecting Kerberos to wait, so warn that
+			// the flag is inert on this platform rather than
+			// silently failing the user's expectation.
+			log.Println("-w was specified but Kerberos/Negotiate " +
+				"is not available on this platform; the flag " +
+				"has no effect")
 		}
 	}
 	if a != nil {

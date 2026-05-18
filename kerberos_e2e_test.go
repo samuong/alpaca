@@ -20,7 +20,7 @@
 // MIT KDC + squid configured to advertise Negotiate, NTLM and Basic, then
 // exercises the full alpaca pipeline against it: PAC-less direct upstream,
 // the multi-auth chain, and the security invariants (downgrade refusal,
-// SPN allowlist enforcement, ticket re-check).
+// proxy-auth allowlist enforcement, ticket re-check).
 //
 // Build tag is "e2e && darwin": the test exercises alpaca's macOS
 // GSS.framework Negotiate path, which is the only Kerberos backend

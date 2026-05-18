@@ -64,13 +64,17 @@ type proxyAuthenticator interface {
 	// advertised in its Proxy-Authenticate response header.
 	scheme() string
 
-	// applicableTo reports whether this authenticator is willing to
-	// authenticate against the given proxy host. Implementations may
-	// use this to enforce policy (e.g. SPN allowlists for Kerberos,
-	// or a state-of-the-world check such as "is my Kerberos ticket
-	// still valid"). Returning false causes the picker to omit this
-	// authenticator from the candidate list, so the chain falls
-	// through to the next method instead of failing mid-flight.
+	// applicableTo reports whether this authenticator is currently
+	// willing to authenticate against the given proxy host. This is
+	// the per-method runtime-applicability hook — typically a
+	// state-of-the-world check like "do I still have a Kerberos
+	// ticket?". It is NOT the place to enforce host policy: that's
+	// the chain-level proxy-auth allowlist (*authChain.allowedHost),
+	// which applies uniformly across all schemes; authenticators
+	// must not duplicate it here. Returning false causes the picker
+	// to omit this authenticator from the candidate list, so the
+	// chain falls through to the next method instead of failing
+	// mid-flight.
 	applicableTo(proxyHost string) bool
 
 	// safeWithoutChallenge reports whether this authenticator may be
@@ -290,6 +294,16 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	if err != nil {
+		// Without this line, an auth-chain refusal on the CONNECT
+		// path surfaces to the client as a bare 502 with nothing in
+		// alpaca's log explaining why — the most common cause of
+		// "alpaca returned 502 and I don't know why". The picker
+		// already logged WHICH host was excluded; this line links
+		// that to the 502 the client actually saw.
+		if errors.Is(err, errNoMatchingAuthMethod) {
+			log.Printf("[%d] No authenticator matched proxy %q; "+
+				"returning 502 to client", id, proxyURL.Host)
+		}
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}

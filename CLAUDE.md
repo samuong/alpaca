@@ -220,8 +220,9 @@ Triggered on tags matching `v*`. Creates a GitHub release and uploads platform-s
 | `-H`        | false        | Print hashed NTLM credentials and exit         |
 | `-w`        | `0`          | Seconds to wait at startup for a Kerberos ticket (macOS) |
 | `--no-kerberos` | false    | Disable Kerberos auto-detection (macOS)        |
-| `-q`        | false        | Quiet mode — suppress all log output           |
-| `--debug`   | false        | Verbose troubleshooting output (DEBUG-prefixed lines explaining picker + auth decisions) |
+| `--enable-socks` | false   | Allow SOCKS5 proxies from PAC files (bypasses the HTTP auth chain) |
+| `-q`        | false        | Quiet mode — suppress all log output (also suppresses startup nudges and `--debug`) |
+| `--debug`   | false        | Verbose troubleshooting output (DEBUG-prefixed lines explaining picker + auth decisions); silently suppressed by `-q` |
 | `--proxy-auth-allowlist` | (none) | Comma-separated DNS suffixes allowed to receive proxy credentials. Default permissive; overrides ALPACA_PROXY_AUTH_ALLOWLIST. |
 | `-version`  | false        | Print version and exit                         |
 

@@ -59,7 +59,7 @@ The test:
      falls through to Basic.
    - When only Negotiate is configured but ineligible, the chain
      surfaces `errNoMatchingAuthMethod` (no silent Basic downgrade).
-   - The `KERBEROS_SPN_ALLOWLIST` opt-out works at picker time.
+   - The chain-level proxy-auth allowlist blocks credential exposure when the proxy host doesn't match.
 5. Tears the container down on exit.
 
 ## Skipping conditions

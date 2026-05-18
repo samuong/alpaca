@@ -173,10 +173,21 @@ When auth misbehaves, the first thing to check is alpaca's own log:
   `--proxy-auth-allowlist` / `ALPACA_PROXY_AUTH_ALLOWLIST`, or unset
   them to permit any host. See "Restricting where Alpaca sends
   credentials" above.
-- `Kerberos ticket no longer valid` — `klist` to confirm the TGT is
-  still present and unexpired.
-- `Auth method X declines for proxy host Y` — generic picker line; look
-  at the line directly above it for the specific reason.
+- `Kerberos ticket no longer valid; skipping Negotiate for …` —
+  Negotiate detected an expired or revoked TGT. Run `klist` to confirm,
+  then refresh via `kinit` (or wait for Apple SSO). The chain falls
+  through to NTLM / Basic for the duration; once a fresh ticket appears
+  Negotiate resumes on the next 407.
+- `Auth method Negotiate declines for proxy host "…"` — Negotiate's
+  runtime preconditions weren't met (today this means "no Kerberos
+  ticket"). The preceding `Kerberos ticket no longer valid …` line
+  explains why; if that line isn't there, alpaca never had a ticket to
+  begin with — check `klist`.
+- `No authenticator matched proxy "…"; returning 502 to client` —
+  every configured method either declined via `applicableTo`, was
+  excluded by the host allowlist, or didn't match the proxy's
+  advertised schemes. The client sees a 502; this line tells you which
+  proxy and that the chain ran out of options.
 
 For deeper diagnosis, run with `--debug`:
 
@@ -184,11 +195,13 @@ For deeper diagnosis, run with `--debug`:
 $ alpaca --debug
 ```
 
-This adds `DEBUG:`-prefixed lines tracing every auth decision: which
-methods the picker considered for each 407, the resolved SPN allowlist,
-the SPN alpaca asked GSS for, how many bytes the SPNEGO token was, and
-which methods landed in the final candidate list. Useful for one-off
-troubleshooting; noisy enough that it's off by default.
+`--debug` emits `DEBUG:`-prefixed lines describing the picker's
+reasoning for every 407: the schemes the proxy advertised, the
+authenticators alpaca considered, the proxy-auth allowlist in effect,
+and the SPN alpaca asked the KDC for. Useful for one-off
+troubleshooting; off by default to keep steady-state logs scannable.
+`-q` (quiet mode) silently suppresses `--debug` output too — they
+share a single log sink.
 
 ### Platform support for Kerberos
 
@@ -275,9 +288,10 @@ can set this manually using the `-C` flag.
 | `-d` | (none) | Domain of the proxy account (for NTLM auth) |
 | `-u` | current user | Username for proxy auth (NTLM) |
 | `-H` | `false` | Print hashed NTLM credentials and exit |
-| `-w` | `0` | Seconds to wait at startup for a Kerberos ticket (macOS only). Default `0` means "don't wait — only use a ticket if one is already present" |
+| `-w` | `0` | Seconds to wait at startup for a Kerberos ticket (macOS only). Default `0` means "don't block startup": a ticket that arrives mid-session (Apple SSO completing, `kinit`, etc.) is honoured automatically on the next 407, so the wait is rarely needed. Set `-w > 0` when you want the startup log to confirm a ticket is present before the listener comes up. |
 | `--no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS only) |
-| `-q` | `false` | Quiet mode, suppress all log output |
+| `--enable-socks` | `false` | Allow SOCKS5 proxies from PAC files. SOCKS5 has its own auth model and bypasses alpaca's HTTP authentication chain (and therefore the proxy-auth allowlist). |
+| `-q` | `false` | Quiet mode, suppress all log output. Also suppresses the proxy-auth-allowlist startup nudge and `--debug` output. |
 | `--debug` | `false` | Verbose troubleshooting output. Adds `DEBUG:`-prefixed lines explaining picker and auth decisions (which methods were considered for each 407, the proxy-auth allowlist that applied, the SPN alpaca asked GSS for, etc.). Use when diagnosing "why didn't auth work" |
 | `--proxy-auth-allowlist` | (none) | Comma-separated DNS suffixes that may receive proxy credentials. Applies uniformly to Basic, NTLM, and Negotiate. Default is permissive (any host); the literal value `*` is the explicit permissive form. Overrides `ALPACA_PROXY_AUTH_ALLOWLIST` when set. See "Restricting where Alpaca sends credentials" above. |
 | `-version` | `false` | Print version and exit |
