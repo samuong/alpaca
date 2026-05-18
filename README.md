@@ -113,23 +113,50 @@ permit cross-realm SPN requests, set `KERBEROS_SPN_ALLOWLIST=*` explicitly.
 A stderr message at startup tells you what default was picked, or warns if
 the realm could not be determined.
 
-**Cross-realm setups need explicit configuration.** If your environment uses
-one Kerberos realm for principals (e.g. `alice@CORP.EXAMPLE.COM`) but a
-different DNS domain for proxies (e.g. `*.example.net`), the auto-derived
-default will only permit the principal's home realm and Negotiate will be
-declined for proxies in the other domain. The log line that appears in
-this case is:
+**Most enterprise environments need this set explicitly.** The auto-derived
+default assumes proxies share the DNS suffix of your Kerberos realm, which
+is the simplest case but not the common one. Internal proxies that
+authenticate via 407 SPNEGO frequently live in a DNS namespace that has
+nothing to do with the user realm:
+
+- **Vendor-managed egress proxies** — traditional forward proxies
+  (Squid/Bluecoat/F5) operated by an outsourced partner under the vendor's
+  own namespace (e.g. principals in `CORP.EXAMPLE.COM`, proxies at
+  `*.proxy-vendor.example.net`).
+- **Internal proxies in a separate IT subdomain** — egress fleets under a
+  dedicated ops/IT domain (e.g. `proxy.it.example.com` or
+  `*.aws.example-infra.net`) rather than the user-facing corporate domain.
+- **Post-acquisition estates** — the parent AD realm persists while
+  subsidiary DNS suffixes remain in active use for proxies and internal
+  apps.
+
+SaaS proxies (Prisma Access, Zscaler, Netskope, etc.) typically authenticate
+via their own client agents — GlobalProtect, Zscaler Client Connector,
+Netskope Client — rather than 407 SPNEGO, so they don't need to be in
+`KERBEROS_SPN_ALLOWLIST`. When your PAC routes traffic through one, the
+client agent handles the auth handshake separately.
+
+If any of the situations above apply, Alpaca's default allowlist will
+exclude your internal proxies and Negotiate will be declined for them. The
+log line that appears is:
 
 ```
 Kerberos SPN allowlist excludes "proxy.example.net" (allowed suffixes: [.corp.example.com]); set KERBEROS_SPN_ALLOWLIST to include this host or '*' to accept all
 ```
 
-Set `KERBEROS_SPN_ALLOWLIST` explicitly to either the proxy's DNS suffix or
-both:
+Set `KERBEROS_SPN_ALLOWLIST` to cover every proxy DNS suffix your PAC
+returns. The proxy suffixes do not need to match your principal's realm —
+Alpaca asks the KDC for `HTTP/proxy.example.net@CORP.EXAMPLE.COM`, and the
+KDC's SPN registry (and any cross-realm trusts) decide whether to issue a
+service ticket:
 
 ```sh
-$ export KERBEROS_SPN_ALLOWLIST=.example.net,.corp.example.com
+$ export KERBEROS_SPN_ALLOWLIST=.corp.example.com,.example.net
 ```
+
+If you don't know your proxy topology offhand, grep your PAC file(s) for
+`PROXY` directives — every unique hostname there is a candidate for the
+allowlist.
 
 ### Troubleshooting
 
