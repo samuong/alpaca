@@ -66,6 +66,12 @@ func main() {
 	noKerberos := flag.Bool("no-kerberos", false,
 		"disable Kerberos/Negotiate auto-detection (macOS only)")
 	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
+	debug := flag.Bool("debug", false,
+		"verbose troubleshooting log output. Adds DEBUG-prefixed "+
+			"lines explaining which auth methods the picker "+
+			"considered for each 407, the resolved SPN allowlist, "+
+			"the SPN alpaca asked GSS for, and so on. Implies "+
+			"-q false.")
 	version := flag.Bool("version", false, "print version number")
 	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
 	// -k is retained for backward compatibility: it sets the default
@@ -78,6 +84,7 @@ func main() {
 	if *quiet {
 		log.SetOutput(io.Discard)
 	}
+	debugEnabled = *debug
 
 	// default to localhost if no hosts are specified
 	if len(hosts) == 0 {
@@ -160,6 +167,12 @@ func main() {
 	if auth == nil {
 		log.Println("No authentication methods configured; alpaca will " +
 			"surface proxy 407 responses as 502 Bad Gateway to clients")
+	} else if debugEnabled {
+		names := make([]string, 0, len(methods))
+		for _, m := range methods {
+			names = append(names, m.scheme())
+		}
+		debugf("Auth chain configured (preference order): %v", names)
 	}
 
 	errch := make(chan error)

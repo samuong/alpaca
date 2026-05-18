@@ -113,6 +113,49 @@ permit cross-realm SPN requests, set `KERBEROS_SPN_ALLOWLIST=*` explicitly.
 A stderr message at startup tells you what default was picked, or warns if
 the realm could not be determined.
 
+**Cross-realm setups need explicit configuration.** If your environment uses
+one Kerberos realm for principals (e.g. `alice@CORP.EXAMPLE.COM`) but a
+different DNS domain for proxies (e.g. `*.example.net`), the auto-derived
+default will only permit the principal's home realm and Negotiate will be
+declined for proxies in the other domain. The log line that appears in
+this case is:
+
+```
+Kerberos SPN allowlist excludes "proxy.example.net" (allowed suffixes: [.corp.example.com]); set KERBEROS_SPN_ALLOWLIST to include this host or '*' to accept all
+```
+
+Set `KERBEROS_SPN_ALLOWLIST` explicitly to either the proxy's DNS suffix or
+both:
+
+```sh
+$ export KERBEROS_SPN_ALLOWLIST=.example.net,.corp.example.com
+```
+
+### Troubleshooting
+
+When auth misbehaves, the first thing to check is alpaca's own log:
+
+- `Kerberos SPN allowlist excludes …` — see the cross-realm note above.
+- `Kerberos ticket no longer valid` — `klist` to confirm the TGT is still
+  present and unexpired.
+- `Kerberos ticket present but realm could not be derived` — the
+  principal name doesn't parse as `user@REALM`; either set
+  `KERBEROS_SPN_ALLOWLIST` explicitly or `=*` to opt into permissive mode.
+- `Auth method X declines for proxy host Y` — generic picker line; look
+  at the line directly above it for the specific reason.
+
+For deeper diagnosis, run with `--debug`:
+
+```sh
+$ alpaca --debug
+```
+
+This adds `DEBUG:`-prefixed lines tracing every auth decision: which
+methods the picker considered for each 407, the resolved SPN allowlist,
+the SPN alpaca asked GSS for, how many bytes the SPNEGO token was, and
+which methods landed in the final candidate list. Useful for one-off
+troubleshooting; noisy enough that it's off by default.
+
 ### Platform support for Kerberos
 
 Kerberos / Negotiate authentication in this build is **macOS only**. It uses
@@ -202,6 +245,7 @@ can set this manually using the `-C` flag.
 | `--no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS only) |
 | `-k` | `false` | **Deprecated.** Equivalent to `-w 30`. Negotiate is auto-detected without `-k` whenever a Kerberos ticket is present |
 | `-q` | `false` | Quiet mode, suppress all log output |
+| `--debug` | `false` | Verbose troubleshooting output. Adds `DEBUG:`-prefixed lines explaining picker and auth decisions (which methods were considered for each 407, the resolved SPN allowlist, the SPN alpaca asked GSS for, etc.). Use when diagnosing "why didn't auth work" |
 | `-version` | `false` | Print version and exit |
 
 ### Environment variables

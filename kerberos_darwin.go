@@ -517,6 +517,7 @@ func (n *negotiateAuthenticator) safeWithoutChallenge() bool { return true }
 // next configured authenticator.
 func (n *negotiateAuthenticator) applicableTo(proxyHost string) bool {
 	if proxyHost == "" {
+		debugf("Negotiate: empty proxy host; declining")
 		return false
 	}
 	check := n.hasTicket
@@ -528,6 +529,8 @@ func (n *negotiateAuthenticator) applicableTo(proxyHost string) bool {
 			proxyHost)
 		return false
 	}
+	debugf("Negotiate: proxy=%q has-ticket=true implicit=%v allowlist=%v",
+		proxyHost, n.implicitDefault, n.allowedSuffixes)
 	// Lazy allowlist resolution closes the late-ticket security hole:
 	// when KERBEROS_SPN_ALLOWLIST was unset and no ticket existed at
 	// startup, the constructor left allowedSuffixes empty AND set
@@ -548,8 +551,18 @@ func (n *negotiateAuthenticator) applicableTo(proxyHost string) bool {
 		}
 	}
 	if !n.allowedHost(proxyHost) {
+		// Always-on (not behind --debug) because this is the most
+		// common cause of "Negotiate didn't work" and the only way a
+		// user can self-diagnose without re-launching alpaca. The
+		// allowlist origin (explicit env-var vs. home-realm-derived)
+		// matters for the fix, so include both the host and the
+		// current suffix list.
+		log.Printf("Kerberos SPN allowlist excludes %q (allowed suffixes: %v); "+
+			"set KERBEROS_SPN_ALLOWLIST to include this host or '*' "+
+			"to accept all", proxyHost, n.allowedSuffixes)
 		return false
 	}
+	debugf("Negotiate: applicable for %q", proxyHost)
 	return true
 }
 
@@ -563,6 +576,7 @@ func (n *negotiateAuthenticator) tryResolveImplicitAllowlist() bool {
 	n.allowlistMu.Lock()
 	defer n.allowlistMu.Unlock()
 	if !n.implicitDefault {
+		debugf("Negotiate: implicit allowlist already resolved; no-op")
 		return true // someone else won the race and resolved it.
 	}
 	resolve := n.realmFn
@@ -571,6 +585,8 @@ func (n *negotiateAuthenticator) tryResolveImplicitAllowlist() bool {
 	}
 	realm := resolve()
 	if realm == "" {
+		debugf("Negotiate: realm derivation returned empty; " +
+			"implicit allowlist remains unresolved")
 		return false
 	}
 	n.allowedSuffixes = []string{"." + realm}
@@ -606,11 +622,14 @@ func (n *negotiateAuthenticator) do(req *http.Request, rt http.RoundTripper) (*h
 			"proxy host %q not in KERBEROS_SPN_ALLOWLIST", proxyHost)
 	}
 
+	debugf("Negotiate: requesting SPN HTTP@%s via GSS.framework", proxyHost)
 	token, err := generateSPNEGOToken(proxyHost)
 	if err != nil {
 		log.Printf("Error generating SPNEGO token for %s: %v", proxyHost, err)
 		return nil, err
 	}
+	debugf("Negotiate: SPNEGO token generated (%d bytes); attaching to request",
+		len(token))
 
 	req.Header.Set("Proxy-Authorization", "Negotiate "+base64.StdEncoding.EncodeToString(token))
 	return rt.RoundTrip(req)

@@ -391,6 +391,7 @@ func connectViaProxy(req *http.Request, proxyURL *url.URL, auth *authChain) (net
 	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
 		schemes := parseProxyAuthenticateSchemes(resp.Header)
+		debugf("[%d] Proxy advertised schemes: %v", id, schemes)
 		_ = resp.Body.Close()
 		// resp is now stale; the retry helper returns a fresh one.
 		authResp, err := retryConnectWithAuth(req, proxyURL, auth, schemes, &tr)
@@ -496,6 +497,7 @@ func (ph ProxyHandler) proxyRequest(w http.ResponseWriter, req *http.Request, au
 	}
 	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
 		schemes := parseProxyAuthenticateSchemes(resp.Header)
+		debugf("[%d] Proxy advertised schemes: %v", id, schemes)
 		_ = resp.Body.Close()
 		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
 		resp, err = retryProxyRequestWithAuth(req, ph.transport, auth, schemes, rd)
