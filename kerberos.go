@@ -21,8 +21,3 @@ package main
 func newNegotiateAuthenticator(waitSeconds int) proxyAuthenticator {
 	return nil
 }
-
-// defaultKerberosRealm is a stub for non-macOS platforms. Returns the
-// empty string so main.go falls back to the explicit-allowlist nudge
-// rather than auto-deriving anything.
-func defaultKerberosRealm() string { return "" }

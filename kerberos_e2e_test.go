@@ -108,7 +108,7 @@ func TestKerberosE2E(t *testing.T) {
 	t.Run("Multi-method chain prefers Negotiate", fx.testMultiMethodPrefersNegotiate)
 	t.Run("Falls through to Basic when Negotiate ticket is gone", fx.testFallsThroughOnTicketLoss)
 	t.Run("Refuses Basic when only NTLM/Negotiate configured against Basic-only proxy", fx.testRefusesBasicDowngrade)
-	t.Run("SPN allowlist excludes proxy", fx.testSPNAllowlistExclusion)
+	t.Run("proxy-auth allowlist excludes proxy", fx.testProxyAuthAllowlistExclusion)
 	// Note: there is no e2e sub-test for NTLM because squid's only
 	// container-friendly NTLM helper (ntlm_fake_auth) emits Type-2
 	// challenges that go-ntlmssp's strict parser rejects, and a real
@@ -542,30 +542,38 @@ func (fx *e2eFixture) testRefusesBasicDowngrade(t *testing.T) {
 	assert.ErrorIs(t, err, errNoMatchingAuthMethod)
 }
 
-func (fx *e2eFixture) testSPNAllowlistExclusion(t *testing.T) {
-	// Allowlist that does NOT match proxyHost. applicableTo must
-	// return false at picker time.
+func (fx *e2eFixture) testProxyAuthAllowlistExclusion(t *testing.T) {
+	// hostAllowlist that does NOT match proxyHost. The chain-level
+	// allowlist must return zero candidates from pick(), uniformly
+	// across all auth methods.
 	neg := newNegotiateAuthenticator(0)
 	require.NotNil(t, neg)
-	negotiator, ok := neg.(*negotiateAuthenticator)
-	require.True(t, ok)
-	negotiator.allowedSuffixes = parseSPNAllowlist(".unrelated.test")
 
-	// Without a fallback method, the chain must error.
-	chain := newAuthChain(negotiator)
+	// Without a fallback method, the chain must error because the
+	// host is excluded outright (no method even attempted).
+	chain := newAuthChain(neg)
+	require.NotNil(t, chain)
+	chain.hostAllowlist = parseAuthAllowlist(".unrelated.test")
 	resp, err := fx.transportThroughAlpaca(chain).RoundTrip(mustReq(t, fx))
 	if err == nil {
 		_ = resp.Body.Close()
 	}
 	require.Error(t, err,
-		"expected SPN-allowlist exclusion to surface as errNoMatchingAuthMethod")
+		"expected proxy-auth allowlist exclusion to surface as errNoMatchingAuthMethod")
 
-	// With Basic also configured, the chain must fall through.
+	// With Basic also configured, the chain-level allowlist must
+	// still exclude every method (the gate is at chain level, not
+	// per-authenticator).
 	basic := newBasicAuthenticator(basicUser + ":" + basicPassword)
-	chain = newAuthChain(negotiator, basic)
+	chain = newAuthChain(neg, basic)
+	require.NotNil(t, chain)
+	chain.hostAllowlist = parseAuthAllowlist(".unrelated.test")
 	resp, err = fx.transportThroughAlpaca(chain).RoundTrip(mustReq(t, fx))
-	require.NoError(t, err)
-	assertSuccessful200(t, resp)
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+	require.Error(t, err,
+		"chain-level allowlist must exclude every method, including Basic")
 }
 
 // assertSuccessful200 verifies that resp is a 200 from the in-container

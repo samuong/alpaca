@@ -103,10 +103,15 @@ Downgrade refusal: when the proxy returns 407 with no parseable
 Negotiate; Basic is excluded so its credentials are never sent without an
 explicit server advertisement.
 
-Host policy: each authenticator implements `applicableTo(proxyHost) bool`.
-The `negotiateAuthenticator` uses this to enforce `KERBEROS_SPN_ALLOWLIST`,
-falling through to the next method (instead of failing the whole chain) for
-hosts that are out-of-policy.
+Host policy: enforced at the picker level (`*authChain.allowedHost`) and
+sourced from `--proxy-auth-allowlist` / `ALPACA_PROXY_AUTH_ALLOWLIST`. The
+allowlist is a list of DNS suffixes that may receive any kind of proxy
+credential; default is permissive (any host). When the allowlist is set and
+the proxy hostname doesn't match, the picker returns zero candidates and
+no authenticator is consulted. Per-authenticator `applicableTo(host)`
+remains for runtime preconditions unrelated to the allowlist — e.g.
+`negotiateAuthenticator.applicableTo` returns false when no Kerberos ticket
+is currently available, so the chain falls through to the next method.
 
 ### Key Interfaces
 
@@ -217,16 +222,17 @@ Triggered on tags matching `v*`. Creates a GitHub release and uploads platform-s
 | `--no-kerberos` | false    | Disable Kerberos auto-detection (macOS)        |
 | `-q`        | false        | Quiet mode — suppress all log output           |
 | `--debug`   | false        | Verbose troubleshooting output (DEBUG-prefixed lines explaining picker + auth decisions) |
+| `--proxy-auth-allowlist` | (none) | Comma-separated DNS suffixes allowed to receive proxy credentials. Default permissive; overrides ALPACA_PROXY_AUTH_ALLOWLIST. |
 | `-version`  | false        | Print version and exit                         |
 
 ## Environment variables
 
-| Variable                 | Purpose                                                   |
-|--------------------------|-----------------------------------------------------------|
-| `NTLM_CREDENTIALS`       | `username@DOMAIN:hash` (generate with `alpaca -H`)        |
-| `BASIC_CREDENTIALS`      | `login:password` for Basic auth                           |
-| `KERBEROS_SPN_ALLOWLIST` | Comma-separated DNS suffixes that may receive SPNEGO tokens. On macOS defaults to the user's home Kerberos realm when unset; set to `*` to permit any host explicitly. |
-| `NTLM_USERNAME`/`NTLM_DOMAIN` | Used by the keyring credential source                |
+| Variable                       | Purpose                                                   |
+|--------------------------------|-----------------------------------------------------------|
+| `NTLM_CREDENTIALS`             | `username@DOMAIN:hash` (generate with `alpaca -H`)        |
+| `BASIC_CREDENTIALS`            | `login:password` for Basic auth                           |
+| `ALPACA_PROXY_AUTH_ALLOWLIST`  | Comma-separated DNS suffixes that may receive proxy credentials. Applies to Basic, NTLM, and Negotiate uniformly. Default is permissive (any host); set to `*` for the explicit permissive form. Overridden by `--proxy-auth-allowlist` when both are set. |
+| `NTLM_USERNAME`/`NTLM_DOMAIN`  | Used by the keyring credential source                     |
 
 ## Key Dependencies
 

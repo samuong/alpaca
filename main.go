@@ -74,6 +74,12 @@ func main() {
 			"-q false.")
 	version := flag.Bool("version", false, "print version number")
 	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
+	authAllowlist := flag.String("proxy-auth-allowlist", "",
+		"comma-separated DNS suffixes that may receive proxy "+
+			"credentials. Applies uniformly to Basic, NTLM, and "+
+			"Negotiate. Default is permissive (any host); the "+
+			"literal value \"*\" is the explicit permissive form. "+
+			"Overrides ALPACA_PROXY_AUTH_ALLOWLIST when set.")
 	flag.Parse()
 
 	if *quiet {
@@ -161,6 +167,31 @@ func main() {
 		methods = append(methods, basicAuth)
 	}
 	auth := newAuthChain(methods...)
+	if auth != nil {
+		// Resolve the proxy-auth allowlist. CLI flag wins over env var;
+		// both default to "" which parseAuthAllowlist treats as nil
+		// (permissive — any host receives credentials).
+		allowlistValue := *authAllowlist
+		if allowlistValue == "" {
+			allowlistValue = os.Getenv("ALPACA_PROXY_AUTH_ALLOWLIST")
+		}
+		auth.hostAllowlist = parseAuthAllowlist(allowlistValue)
+		if len(auth.hostAllowlist) > 0 {
+			log.Printf("Proxy auth allowlist active: %v",
+				auth.hostAllowlist)
+		} else {
+			// Discoverability nudge for users who want to restrict
+			// where credentials go. The default is permissive because
+			// most users trust their PAC implicitly, but a hostile or
+			// MITM'd PAC over plain HTTP could otherwise direct
+			// alpaca to authenticate against attacker-named proxies.
+			// One line at startup; quiet enough not to be noise.
+			log.Println("Proxy auth allowlist: permissive (any host " +
+				"nominated by your PAC will receive credentials). " +
+				"Set ALPACA_PROXY_AUTH_ALLOWLIST or pass " +
+				"--proxy-auth-allowlist to restrict.")
+		}
+	}
 	if auth == nil {
 		log.Println("No authentication methods configured; alpaca will " +
 			"surface proxy 407 responses as 502 Bad Gateway to clients")

@@ -309,6 +309,244 @@ func TestIsToken(t *testing.T) {
 	}
 }
 
+func TestParseAuthAllowlist(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{
+			name: "empty input is permissive (nil)",
+			in:   "",
+			want: nil,
+		},
+		{
+			name: "single bare suffix is normalised to dot-prefix",
+			in:   "corp.example",
+			want: []string{".corp.example"},
+		},
+		{
+			name: "single dot-prefixed suffix passed through",
+			in:   ".corp.example",
+			want: []string{".corp.example"},
+		},
+		{
+			name: "multiple entries with whitespace tolerated",
+			in:   " .corp.example , example.test ",
+			want: []string{".corp.example", ".example.test"},
+		},
+		{
+			name: "case-folded to lower",
+			in:   ".CORP.Example",
+			want: []string{".corp.example"},
+		},
+		{
+			name: "literal asterisk means permissive (nil)",
+			in:   "*",
+			want: nil,
+		},
+		{
+			name: "asterisk among other entries also disables",
+			in:   ".corp.example,*",
+			want: nil,
+		},
+		{
+			name: "malformed entries dropped (whitespace inside name)",
+			in:   "corp .example,.good.example",
+			want: []string{".good.example"},
+		},
+		{
+			name: "malformed entries dropped (slashes, wildcards)",
+			in:   "*.corp.example,/etc/passwd,.good.example",
+			want: []string{".good.example"},
+		},
+		{
+			name: "trailing comma yields no entry",
+			in:   ".corp.example,",
+			want: []string{".corp.example"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, parseAuthAllowlist(tc.in))
+		})
+	}
+}
+
+func TestAuthChainAllowedHost(t *testing.T) {
+	mk := func(allow string) *authChain {
+		return &authChain{hostAllowlist: parseAuthAllowlist(allow)}
+	}
+
+	t.Run("empty allowlist permits everything", func(t *testing.T) {
+		c := mk("")
+		assert.True(t, c.allowedHost("anything.example"))
+		assert.True(t, c.allowedHost("evil.example.test"))
+	})
+
+	t.Run("dot-prefixed suffix matches subdomain", func(t *testing.T) {
+		c := mk(".corp.example")
+		assert.True(t, c.allowedHost("proxy.corp.example"))
+		assert.True(t, c.allowedHost("a.b.corp.example"))
+	})
+
+	t.Run("dot-prefixed suffix matches the bare suffix host as well", func(t *testing.T) {
+		// parseAuthAllowlist normalises both bare and dot-prefixed
+		// entries to dot-prefixed form, then allowedHost prepends "."
+		// to the host before suffix match. Result: ".corp.example"
+		// matches both "corp.example" and "proxy.corp.example".
+		c := mk(".corp.example")
+		assert.True(t, c.allowedHost("corp.example"))
+	})
+
+	t.Run("bare suffix entry matches subdomain after normalisation", func(t *testing.T) {
+		c := mk("corp.example")
+		assert.True(t, c.allowedHost("proxy.corp.example"))
+		assert.True(t, c.allowedHost("a.b.corp.example"))
+	})
+
+	t.Run("look-alike domains are rejected", func(t *testing.T) {
+		c := mk(".corp.example")
+		// Critical: the leading "." on the synthetic host ensures
+		// attacker-controlled look-alikes cannot match.
+		assert.False(t, c.allowedHost("evil-corp.example"))
+		assert.False(t, c.allowedHost("notcorp.example"))
+		assert.False(t, c.allowedHost("evilcorp.example"))
+	})
+
+	t.Run("trailing dot on host is normalised before match", func(t *testing.T) {
+		// url.URL.Hostname() does NOT strip a trailing "." from an
+		// FQDN, so a hostile PAC could otherwise emit "proxy.corp.
+		// example." and bypass the allowlist via mismatch. Both
+		// sides must be normalised to dot-stripped form before the
+		// suffix comparison.
+		c := mk(".corp.example")
+		assert.True(t, c.allowedHost("proxy.corp.example."),
+			"trailing-dot FQDN must match the same suffix as the "+
+				"bare form")
+		assert.True(t, c.allowedHost("corp.example."))
+	})
+
+	t.Run("trailing dot in allowlist entry is normalised", func(t *testing.T) {
+		// Symmetric case: if the operator writes the entry as
+		// ".corp.example." (a valid DNS FQDN literal), it must still
+		// match hosts written without the trailing dot.
+		c := mk(".corp.example.")
+		assert.True(t, c.allowedHost("proxy.corp.example"))
+		assert.True(t, c.allowedHost("proxy.corp.example."))
+	})
+
+	t.Run("case-insensitive host comparison", func(t *testing.T) {
+		c := mk(".corp.example")
+		assert.True(t, c.allowedHost("PROXY.CORP.EXAMPLE"))
+	})
+
+	t.Run("multiple suffixes - any match permits", func(t *testing.T) {
+		c := mk(".corp.example,.example.test")
+		assert.True(t, c.allowedHost("proxy.corp.example"))
+		assert.True(t, c.allowedHost("proxy.example.test"))
+		assert.False(t, c.allowedHost("proxy.evil.example"))
+	})
+
+	t.Run("explicit asterisk permits everything", func(t *testing.T) {
+		c := mk("*")
+		assert.True(t, c.allowedHost("anything.example"))
+	})
+}
+
+func TestAuthChainPickAllowlist(t *testing.T) {
+	// The chain-level allowlist applies uniformly to every method —
+	// when the host isn't on the list, ZERO authenticators are
+	// returned, regardless of what the proxy advertised. This is the
+	// single gate that protects Basic, NTLM, and Negotiate
+	// credentials from being sent to non-permitted proxies.
+	neg := realisticFake("Negotiate", "Negotiate t")
+	ntlm := realisticFake("NTLM", "NTLM t")
+	basic := realisticFake("Basic", "Basic t")
+
+	t.Run("nil allowlist permits any host", func(t *testing.T) {
+		chain := newAuthChain(neg, ntlm, basic)
+		require.NotNil(t, chain)
+		got := chain.pick([]string{"negotiate", "ntlm", "basic"}, "any.example")
+		assert.Equal(t, []proxyAuthenticator{neg, ntlm, basic}, got)
+	})
+
+	t.Run("non-matching host returns no candidates", func(t *testing.T) {
+		chain := newAuthChain(neg, ntlm, basic)
+		require.NotNil(t, chain)
+		chain.hostAllowlist = parseAuthAllowlist(".corp.example")
+		got := chain.pick([]string{"negotiate", "ntlm", "basic"}, "evil.example")
+		assert.Empty(t, got,
+			"non-allowlisted host must receive zero candidates "+
+				"regardless of what the proxy advertised")
+	})
+
+	t.Run("matching host proceeds to scheme-matching", func(t *testing.T) {
+		chain := newAuthChain(neg, ntlm, basic)
+		require.NotNil(t, chain)
+		chain.hostAllowlist = parseAuthAllowlist(".corp.example")
+		got := chain.pick([]string{"negotiate", "ntlm"}, "proxy.corp.example")
+		assert.Equal(t, []proxyAuthenticator{neg, ntlm}, got)
+	})
+
+	t.Run("non-matching host blocks even safe-without-challenge methods", func(t *testing.T) {
+		// F-1 / F-4 corollary: even Negotiate, which is safe to send
+		// unsolicited, must not be sent to a non-allowlisted host.
+		chain := newAuthChain(neg, ntlm)
+		require.NotNil(t, chain)
+		chain.hostAllowlist = parseAuthAllowlist(".corp.example")
+		got := chain.pick(nil, "evil.example")
+		assert.Empty(t, got)
+	})
+
+	t.Run("explicit asterisk parses to permissive", func(t *testing.T) {
+		chain := newAuthChain(neg, ntlm, basic)
+		require.NotNil(t, chain)
+		chain.hostAllowlist = parseAuthAllowlist("*")
+		got := chain.pick([]string{"negotiate"}, "any.example")
+		assert.Equal(t, []proxyAuthenticator{neg}, got)
+	})
+
+	t.Run("Basic-only chain works on allowlisted host with advertised Basic", func(t *testing.T) {
+		// Positive case: the host IS allowlisted AND the proxy
+		// advertised Basic, so Basic must be returned.
+		chain := newAuthChain(basic)
+		require.NotNil(t, chain)
+		chain.hostAllowlist = parseAuthAllowlist(".corp.example")
+		got := chain.pick([]string{"basic"}, "proxy.corp.example")
+		assert.Equal(t, []proxyAuthenticator{basic}, got)
+	})
+
+	t.Run("allowlisted host still refuses Basic on no-schemes 407 (F-1/F-4)", func(t *testing.T) {
+		// The allowlist gate must AND with the F-1/F-4 downgrade
+		// defence, not replace it. Even on a legitimate allowlisted
+		// host, Basic credentials must never be sent in response to
+		// a 407 with no parseable Proxy-Authenticate header.
+		chain := newAuthChain(basic)
+		require.NotNil(t, chain)
+		chain.hostAllowlist = parseAuthAllowlist(".corp.example")
+		got := chain.pick(nil, "proxy.corp.example")
+		assert.Empty(t, got,
+			"Basic must never be sent against an unadvertised 407, "+
+				"even when the host is on the allowlist")
+	})
+
+	t.Run("trailing-dot proxy host respects allowlist", func(t *testing.T) {
+		// Regression test for F-5: a hostile PAC nominating
+		// "proxy.corp.example." (note trailing dot) must NOT bypass
+		// or false-negative the allowlist. The normalisation in
+		// allowedHost strips the trailing dot before matching.
+		chain := newAuthChain(neg, ntlm, basic)
+		require.NotNil(t, chain)
+		chain.hostAllowlist = parseAuthAllowlist(".corp.example")
+		got := chain.pick([]string{"negotiate", "ntlm", "basic"},
+			"proxy.corp.example.")
+		assert.Equal(t, []proxyAuthenticator{neg, ntlm, basic}, got,
+			"trailing-dot FQDN should match the same suffix as the "+
+				"bare form")
+	})
+}
+
 func TestSplitChallengeNames(t *testing.T) {
 	tests := []struct {
 		in   string

@@ -85,89 +85,96 @@ returning a bare 407 cannot harvest your password.
 
 Otherwise, the authentication with proxy will be simply ignored.
 
-### Security note for Kerberos users
+### Restricting where Alpaca sends credentials
 
-When Negotiate is active (auto-detected on macOS, or via `-w`), Alpaca
-requests a Kerberos service ticket for the upstream proxy host returned by
-your PAC file. If the PAC file is delivered over plain HTTP from an
-untrusted network, an attacker could redirect Alpaca to request tickets
-for an attacker-named SPN.
+**Default behaviour: permissive.** Alpaca will offer whatever credentials
+it has — Basic, NTLM, or Kerberos/Negotiate — to whichever proxy host your
+PAC file nominates. The PAC is treated as the trust root for proxy
+routing: if you've configured Alpaca to fetch a particular PAC, you've
+already decided to route your traffic through whatever proxies that PAC
+selects, so authenticating against those proxies is the natural
+extension. At startup Alpaca logs:
 
-To restrict which proxy hosts Alpaca will request SPNEGO tokens for, set
-`KERBEROS_SPN_ALLOWLIST` to a comma-separated list of DNS suffixes:
+```
+Proxy auth allowlist: permissive (any host nominated by your PAC will receive credentials). Set ALPACA_PROXY_AUTH_ALLOWLIST or pass --proxy-auth-allowlist to restrict.
+```
+
+**When to restrict.** The PAC-trust-root assumption can break in two
+ways:
+
+- **PAC over plain HTTP.** Many PAC URLs are HTTP (no TLS), so a
+  network-position attacker can substitute their own response and direct
+  Alpaca through an attacker-controlled proxy. With the permissive
+  default, that proxy will receive your credentials in whatever form it
+  asks for — Basic plaintext password, NTLMv2 hash, or a Kerberos service
+  ticket.
+- **WPAD discovery.** On networks that auto-discover PAC via DNS or
+  DHCP, an attacker on the same broadcast segment can win the race and
+  serve their own PAC.
+
+To defend against these, restrict the set of proxy hosts allowed to
+receive credentials via `--proxy-auth-allowlist` (or the
+`ALPACA_PROXY_AUTH_ALLOWLIST` environment variable):
 
 ```sh
-$ export KERBEROS_SPN_ALLOWLIST=.corp.example.com,.example.test
+$ alpaca --proxy-auth-allowlist=.corp.example.com,.proxy-vendor.example.net
+# or, persistently:
+$ export ALPACA_PROXY_AUTH_ALLOWLIST=.corp.example.com,.proxy-vendor.example.net
+$ alpaca
 ```
 
-A leading-dot entry (`.corp.example.com`) matches `corp.example.com` itself
-and any subdomain of it. A bare entry (`corp.example.com`) is normalised to
-the same form. The literal value `*` means "any proxy host".
+The flag wins over the environment variable when both are set. Either is
+a comma-separated list of DNS suffixes.
 
-**Default behaviour on macOS:** if `KERBEROS_SPN_ALLOWLIST` is unset and a
-Kerberos ticket is present, Alpaca derives a default allowlist from the
-realm of the user's default credential (e.g. `alice@CORP.EXAMPLE.COM`
-yields `.corp.example.com`). This restricts SPN requests to your home
-realm — the security boundary that actually matters for SPN coercion. To
-permit cross-realm SPN requests, set `KERBEROS_SPN_ALLOWLIST=*` explicitly.
-A stderr message at startup tells you what default was picked, or warns if
-the realm could not be determined.
+**Syntax:**
 
-**Most enterprise environments need this set explicitly.** The auto-derived
-default assumes proxies share the DNS suffix of your Kerberos realm, which
-is the simplest case but not the common one. Internal proxies that
-authenticate via 407 SPNEGO frequently live in a DNS namespace that has
-nothing to do with the user realm:
+- A leading-dot entry (`.corp.example.com`) matches `corp.example.com`
+  itself and any subdomain of it. A bare entry (`corp.example.com`) is
+  normalised to the same form. Trailing dots are ignored so FQDN
+  literals (`corp.example.com.`) work too.
+- Matching is case-insensitive and uses DNS-label boundaries so that
+  `.corp.example` matches `proxy.corp.example` but NOT `evilcorp.example`.
+- The literal value `*` means "any host" — the same shape as the default.
+  Useful to silence the startup discoverability log line if you're
+  intentionally running permissive in a controlled deployment.
+- The allowlist applies uniformly to **all** authentication methods. A
+  host outside the allowlist will not receive Basic, NTLM, or Negotiate
+  credentials, regardless of what the proxy advertises.
 
-- **Vendor-managed egress proxies** — traditional forward proxies
-  (Squid/Bluecoat/F5) operated by an outsourced partner under the vendor's
-  own namespace (e.g. principals in `CORP.EXAMPLE.COM`, proxies at
-  `*.proxy-vendor.example.net`).
-- **Internal proxies in a separate IT subdomain** — egress fleets under a
-  dedicated ops/IT domain (e.g. `proxy.it.example.com` or
-  `*.aws.example-infra.net`) rather than the user-facing corporate domain.
-- **Post-acquisition estates** — the parent AD realm persists while
-  subsidiary DNS suffixes remain in active use for proxies and internal
-  apps.
+**Picking the right suffixes.** Internal proxies often live under a
+different DNS namespace from your Kerberos realm — vendor-managed egress,
+dedicated ops/IT subdomains, post-acquisition estates. To enumerate them,
+grep your PAC file(s) for `PROXY` directives — every unique hostname
+there is a candidate for the allowlist. The allowlist does not need to
+match your Kerberos principal's realm; Alpaca asks the KDC for
+`HTTP/proxy.example.net@CORP.EXAMPLE.COM`, and the KDC's SPN registry
+(and any cross-realm trusts) decide whether to issue a service ticket
+regardless of suffix.
 
-SaaS proxies (Prisma Access, Zscaler, Netskope, etc.) typically authenticate
-via their own client agents — GlobalProtect, Zscaler Client Connector,
-Netskope Client — rather than 407 SPNEGO, so they don't need to be in
-`KERBEROS_SPN_ALLOWLIST`. When your PAC routes traffic through one, the
-client agent handles the auth handshake separately.
+SaaS proxies (Prisma Access, Zscaler, Netskope, etc.) authenticate via
+their own client agents — GlobalProtect, Zscaler Client Connector,
+Netskope Client — not 407 SPNEGO/NTLM/Basic, so they don't need to be in
+the allowlist. When your PAC routes traffic through one of them, the
+client agent handles the auth handshake separately and Alpaca never sees
+a 407.
 
-If any of the situations above apply, Alpaca's default allowlist will
-exclude your internal proxies and Negotiate will be declined for them. The
-log line that appears is:
+When a host is excluded, the log line is:
 
 ```
-Kerberos SPN allowlist excludes "proxy.example.net" (allowed suffixes: [.corp.example.com]); set KERBEROS_SPN_ALLOWLIST to include this host or '*' to accept all
+Proxy "proxy.example.net" not in proxy-auth allowlist (allowed: [.corp.example.com]); update --proxy-auth-allowlist or ALPACA_PROXY_AUTH_ALLOWLIST to include this host, or unset to permit any host
 ```
-
-Set `KERBEROS_SPN_ALLOWLIST` to cover every proxy DNS suffix your PAC
-returns. The proxy suffixes do not need to match your principal's realm —
-Alpaca asks the KDC for `HTTP/proxy.example.net@CORP.EXAMPLE.COM`, and the
-KDC's SPN registry (and any cross-realm trusts) decide whether to issue a
-service ticket:
-
-```sh
-$ export KERBEROS_SPN_ALLOWLIST=.corp.example.com,.example.net
-```
-
-If you don't know your proxy topology offhand, grep your PAC file(s) for
-`PROXY` directives — every unique hostname there is a candidate for the
-allowlist.
 
 ### Troubleshooting
 
 When auth misbehaves, the first thing to check is alpaca's own log:
 
-- `Kerberos SPN allowlist excludes …` — see the cross-realm note above.
-- `Kerberos ticket no longer valid` — `klist` to confirm the TGT is still
-  present and unexpired.
-- `Kerberos ticket present but realm could not be derived` — the
-  principal name doesn't parse as `user@REALM`; either set
-  `KERBEROS_SPN_ALLOWLIST` explicitly or `=*` to opt into permissive mode.
+- `Proxy "…" not in proxy-auth allowlist …` — your allowlist excludes
+  the proxy host the PAC selected. Either add the host's DNS suffix to
+  `--proxy-auth-allowlist` / `ALPACA_PROXY_AUTH_ALLOWLIST`, or unset
+  them to permit any host. See "Restricting where Alpaca sends
+  credentials" above.
+- `Kerberos ticket no longer valid` — `klist` to confirm the TGT is
+  still present and unexpired.
 - `Auth method X declines for proxy host Y` — generic picker line; look
   at the line directly above it for the specific reason.
 
@@ -271,16 +278,17 @@ can set this manually using the `-C` flag.
 | `-w` | `0` | Seconds to wait at startup for a Kerberos ticket (macOS only). Default `0` means "don't wait — only use a ticket if one is already present" |
 | `--no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS only) |
 | `-q` | `false` | Quiet mode, suppress all log output |
-| `--debug` | `false` | Verbose troubleshooting output. Adds `DEBUG:`-prefixed lines explaining picker and auth decisions (which methods were considered for each 407, the resolved SPN allowlist, the SPN alpaca asked GSS for, etc.). Use when diagnosing "why didn't auth work" |
+| `--debug` | `false` | Verbose troubleshooting output. Adds `DEBUG:`-prefixed lines explaining picker and auth decisions (which methods were considered for each 407, the proxy-auth allowlist that applied, the SPN alpaca asked GSS for, etc.). Use when diagnosing "why didn't auth work" |
+| `--proxy-auth-allowlist` | (none) | Comma-separated DNS suffixes that may receive proxy credentials. Applies uniformly to Basic, NTLM, and Negotiate. Default is permissive (any host); the literal value `*` is the explicit permissive form. Overrides `ALPACA_PROXY_AUTH_ALLOWLIST` when set. See "Restricting where Alpaca sends credentials" above. |
 | `-version` | `false` | Print version and exit |
 
 ### Environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `NTLM_CREDENTIALS`        | `username@DOMAIN:hash` (run `alpaca -H` to generate) |
-| `BASIC_CREDENTIALS`       | `login:password` for HTTP Basic proxy auth |
-| `KERBEROS_SPN_ALLOWLIST`  | Comma-separated list of DNS suffixes that Alpaca may request Kerberos service tickets for. On macOS, defaults to the user's home Kerberos realm when unset; set to `*` to permit any host explicitly. |
+| `NTLM_CREDENTIALS`            | `username@DOMAIN:hash` (run `alpaca -H` to generate) |
+| `BASIC_CREDENTIALS`           | `login:password` for HTTP Basic proxy auth |
+| `ALPACA_PROXY_AUTH_ALLOWLIST` | Comma-separated DNS suffixes that may receive proxy credentials. Applies uniformly to Basic, NTLM, and Negotiate. Default is permissive (any host); set to `*` for the explicit permissive form. Overridden by `--proxy-auth-allowlist` when both are set. See "Restricting where Alpaca sends credentials" above. |
 | `NTLM_USERNAME` / `NTLM_DOMAIN` | Used by the keyring credential source (Linux/GNOME, Windows) |
 
 ---
