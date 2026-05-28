@@ -189,20 +189,6 @@ When auth misbehaves, the first thing to check is alpaca's own log:
   advertised schemes. The client sees a 502; this line tells you which
   proxy and that the chain ran out of options.
 
-For deeper diagnosis, run with `--debug`:
-
-```sh
-$ alpaca --debug
-```
-
-`--debug` emits `DEBUG:`-prefixed lines describing the picker's
-reasoning for every 407: the schemes the proxy advertised, the
-authenticators alpaca considered, the proxy-auth allowlist in effect,
-and the SPN alpaca asked the KDC for. Useful for one-off
-troubleshooting; off by default to keep steady-state logs scannable.
-`-q` (quiet mode) silently suppresses `--debug` output too — they
-share a single log sink.
-
 ### Platform support for Kerberos
 
 Kerberos / Negotiate authentication in this build is **macOS only**. It uses
@@ -291,7 +277,7 @@ can set this manually using the `-C` flag.
 | `-w` | `0` | Seconds to wait at startup for a Kerberos ticket (macOS only). Default `0` means "don't block startup": a ticket that arrives mid-session (Apple SSO completing, `kinit`, etc.) is honoured automatically on the next 407, so the wait is rarely needed. Set `-w > 0` when you want the startup log to confirm a ticket is present before the listener comes up. |
 | `-no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS only) |
 | `-enable-socks` | `false` | Allow SOCKS5 proxies from PAC files. SOCKS5 has its own auth model and bypasses alpaca's HTTP authentication chain (and therefore the proxy-auth allowlist). |
-| `-q` | `false` | Quiet mode, suppress all log output. Also suppresses the proxy-auth-allowlist startup nudge and `--debug` output. |
+| `-q` | `false` | Quiet mode, suppress all log output. Also suppresses the proxy-auth-allowlist startup nudge. |
 | `-proxy-auth-allowlist` | (none) | Comma-separated DNS suffixes that may receive proxy credentials. Applies uniformly to Basic, NTLM, and Negotiate. Default is permissive (any host); the literal value `*` is the explicit permissive form. Overrides `ALPACA_PROXY_AUTH_ALLOWLIST` when set. See "Restricting where Alpaca sends credentials" above. |
 | `-version` | `false` | Print version and exit |
 

@@ -94,13 +94,11 @@ func (c *authChain) pick(schemes []string, proxyHost string) []proxyAuthenticato
 	if c == nil || len(c.methods) == 0 {
 		return nil
 	}
-	debugf("Picker: %d configured method(s) for proxy=%q advertised-schemes=%v",
-		len(c.methods), proxyHost, schemes)
 	// Host allowlist gate runs first so a non-permitted host receives
-	// no credentials of any kind. INFO-level log (not behind --debug)
-	// because excluding a proxy from auth is the most common cause of
-	// "alpaca didn't authenticate against my proxy" and the user
-	// needs to self-diagnose.
+	// no credentials of any kind. INFO-level log because excluding a
+	// proxy from auth is the most common cause of "alpaca didn't
+	// authenticate against my proxy" and the user needs to
+	// self-diagnose.
 	if !c.allowedHost(proxyHost) {
 		log.Printf("Proxy %q not in proxy-auth allowlist (allowed: %v); "+
 			"update --proxy-auth-allowlist or ALPACA_PROXY_AUTH_ALLOWLIST "+
@@ -118,11 +116,9 @@ func (c *authChain) pick(schemes []string, proxyHost string) []proxyAuthenticato
 				m.scheme(), proxyHost)
 			continue
 		}
-		debugf("Picker: %s applicable for proxy=%q", m.scheme(), proxyHost)
 		applicable = append(applicable, m)
 	}
 	if len(applicable) == 0 {
-		debugf("Picker: no applicable methods after host-policy filter")
 		return nil
 	}
 
@@ -143,8 +139,6 @@ func (c *authChain) pick(schemes []string, proxyHost string) []proxyAuthenticato
 				"safe-without-challenge authenticator is configured; " +
 				"refusing to send credentials")
 		}
-		debugf("Picker: no advertised schemes; safe-without-challenge "+
-			"fallback selected %d method(s)", len(safe))
 		return safe
 	}
 
@@ -161,14 +155,6 @@ func (c *authChain) pick(schemes []string, proxyHost string) []proxyAuthenticato
 	if len(matched) == 0 {
 		log.Printf("Proxy advertises %v but no matching authenticator is configured",
 			schemes)
-	}
-	if debugEnabled {
-		names := make([]string, 0, len(matched))
-		for _, m := range matched {
-			names = append(names, m.scheme())
-		}
-		debugf("Picker: %d candidate(s) in attempt order: %v",
-			len(matched), names)
 	}
 	return matched
 }

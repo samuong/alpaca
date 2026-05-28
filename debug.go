@@ -16,25 +16,22 @@ package main
 
 import "log"
 
-// debugEnabled is set from main.go's --debug flag. When true, debugf
-// emits "DEBUG: " prefixed log lines that explain alpaca's
-// decision-making in detail — which auth methods the picker
-// considered for a 407, the proxy-auth allowlist in effect, which
-// SPN alpaca asked GSS for, and so on. When false, debugf is a
-// no-op.
+// debugEnabled is currently unwired. The original `--debug` CLI flag was
+// withdrawn before merge to avoid shipping a flag that would have to be
+// removed when alpaca migrates its logging to log/slog and gains a proper
+// log-level surface (see samuong/alpaca#178). The scaffold is retained
+// so the migration can re-wire it to an `ALPACA_LOG_LEVEL` env var
+// without re-introducing every debugf callsite.
 //
-// Always-on log lines (`log.Printf` / `log.Println` directly) are
-// reserved for events a user troubleshooting a misconfiguration
-// needs to see without re-launching alpaca — e.g. "Proxy ... not in
-// proxy-auth allowlist ..." tells the user exactly why authentication
-// was skipped and how to fix it. Anything noisier than that goes
-// behind --debug to keep steady-state logs scannable.
+//nolint:unused // reserved for the slog migration; see PR #178 discussion
 var debugEnabled bool
 
-// debugf logs a "DEBUG: " prefixed line iff --debug is set. Uses
-// log.Printf under the hood so the line goes through the same sink
-// as all other alpaca logs (which means -q correctly suppresses it
+// debugf logs a "DEBUG: " prefixed line iff debugEnabled is set. Uses
+// log.Printf under the hood so the line goes through the same sink as
+// all other alpaca logs (which means -q correctly suppresses it
 // alongside everything else).
+//
+//nolint:unused // reserved for the slog migration; see PR #178 discussion
 func debugf(format string, args ...any) {
 	if !debugEnabled {
 		return

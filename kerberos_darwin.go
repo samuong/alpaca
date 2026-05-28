@@ -257,7 +257,6 @@ func (n *negotiateAuthenticator) safeWithoutChallenge() bool { return true }
 // next configured authenticator.
 func (n *negotiateAuthenticator) applicableTo(proxyHost string) bool {
 	if proxyHost == "" {
-		debugf("Negotiate: empty proxy host; declining")
 		return false
 	}
 	check := n.hasTicket
@@ -269,7 +268,6 @@ func (n *negotiateAuthenticator) applicableTo(proxyHost string) bool {
 			proxyHost)
 		return false
 	}
-	debugf("Negotiate: proxy=%q has-ticket=true", proxyHost)
 	return true
 }
 
@@ -287,14 +285,11 @@ func (n *negotiateAuthenticator) do(req *http.Request, rt http.RoundTripper) (*h
 		return nil, fmt.Errorf("cannot determine proxy host for Negotiate auth")
 	}
 
-	debugf("Negotiate: requesting SPN HTTP@%s via GSS.framework", proxyHost)
 	token, err := generateSPNEGOToken(proxyHost)
 	if err != nil {
 		log.Printf("Error generating SPNEGO token for %s: %v", proxyHost, err)
 		return nil, err
 	}
-	debugf("Negotiate: SPNEGO token generated (%d bytes); attaching to request",
-		len(token))
 
 	req.Header.Set("Proxy-Authorization", "Negotiate "+base64.StdEncoding.EncodeToString(token))
 	return rt.RoundTrip(req)

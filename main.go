@@ -79,7 +79,6 @@ func main() {
 	if *quiet {
 		log.SetOutput(io.Discard)
 	}
-	debugEnabled = *debug
 
 	// default to localhost if no hosts are specified
 	if len(hosts) == 0 {
@@ -121,12 +120,9 @@ func main() {
 			// error when the user supplied creds but they're
 			// malformed; today both cases land on this branch
 			// indistinguishably. Log a calm one-liner so a user
-			// without NoMAD doesn't see what looks like an error,
-			// and put the underlying detail behind --debug for the
-			// "I configured something and it isn't taking" case.
+			// without NoMAD doesn't see what looks like an error.
 			log.Println("NTLM credentials not available from the " +
 				"configured source")
-			debugf("NTLM credential source returned: %v", err)
 		}
 	}
 
@@ -199,12 +195,6 @@ func main() {
 	if auth == nil {
 		log.Println("No authentication methods configured; alpaca will " +
 			"surface proxy 407 responses as 502 Bad Gateway to clients")
-	} else if debugEnabled {
-		names := make([]string, 0, len(methods))
-		for _, m := range methods {
-			names = append(names, m.scheme())
-		}
-		debugf("Auth chain configured (preference order): %v", names)
 	}
 
 	errch := make(chan error)
