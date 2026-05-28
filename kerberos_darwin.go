@@ -234,11 +234,6 @@ func generateSPNEGOToken(proxyHost string) ([]byte, error) {
 
 func (n *negotiateAuthenticator) scheme() string { return "Negotiate" }
 
-// safeWithoutChallenge reports true: the SPNEGO initial token contains
-// no password material (it's a Kerberos service ticket request), so it
-// is safe to send before the proxy has explicitly advertised Negotiate.
-func (n *negotiateAuthenticator) safeWithoutChallenge() bool { return true }
-
 // applicableTo enforces two policies at picker time:
 //
 //  1. The proxy host must be non-empty (we cannot generate an SPN

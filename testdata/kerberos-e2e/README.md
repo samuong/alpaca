@@ -55,7 +55,7 @@ The test:
    - When Negotiate's ticket is "lost" (`hasTicket: false`), the chain
      falls through to Basic.
    - When only Negotiate is configured but ineligible, the chain
-     surfaces `errNoMatchingAuthMethod` (no silent Basic downgrade).
+     surfaces `errNoMatchingAuthMethod`.
    - The chain-level proxy-auth allowlist blocks credential exposure when the proxy host doesn't match.
 5. Tears the container down on exit.
 

@@ -68,12 +68,6 @@ func main() {
 	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
 	version := flag.Bool("version", false, "print version number")
 	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
-	authAllowlist := flag.String("proxy-auth-allowlist", "",
-		"comma-separated DNS suffixes that may receive proxy "+
-			"credentials. Applies uniformly to Basic, NTLM, and "+
-			"Negotiate. Default is permissive (any host); the "+
-			"literal value \"*\" is the explicit permissive form. "+
-			"Overrides ALPACA_PROXY_AUTH_ALLOWLIST when set.")
 	flag.Parse()
 
 	if *quiet {
@@ -168,14 +162,13 @@ func main() {
 	}
 	auth := newAuthChain(methods...)
 	if auth != nil {
-		// Resolve the proxy-auth allowlist. CLI flag wins over env var;
-		// both default to "" which parseAuthAllowlist treats as nil
-		// (permissive — any host receives credentials).
-		allowlistValue := *authAllowlist
-		if allowlistValue == "" {
-			allowlistValue = os.Getenv("ALPACA_PROXY_AUTH_ALLOWLIST")
-		}
-		auth.hostAllowlist = parseAuthAllowlist(allowlistValue)
+		// Resolve the proxy-auth allowlist. Empty / unset is permissive
+		// (any host receives credentials) — parseAuthAllowlist treats
+		// "" as nil. Picking env-var-only (no companion flag) keeps the
+		// "either a flag or an env var, never both" convention the rest
+		// of alpaca already follows for security-sensitive inputs like
+		// BASIC_CREDENTIALS and NTLM_CREDENTIALS.
+		auth.hostAllowlist = parseAuthAllowlist(os.Getenv("ALPACA_PROXY_AUTH_ALLOWLIST"))
 		if len(auth.hostAllowlist) > 0 {
 			log.Printf("Proxy auth allowlist active: %v",
 				auth.hostAllowlist)
@@ -188,8 +181,7 @@ func main() {
 			// One line at startup; quiet enough not to be noise.
 			log.Println("Proxy auth allowlist: permissive (any host " +
 				"nominated by your PAC will receive credentials). " +
-				"Set ALPACA_PROXY_AUTH_ALLOWLIST or pass " +
-				"--proxy-auth-allowlist to restrict.")
+				"Set ALPACA_PROXY_AUTH_ALLOWLIST to restrict.")
 		}
 	}
 	if auth == nil {

@@ -96,7 +96,7 @@ selects, so authenticating against those proxies is the natural
 extension. At startup Alpaca logs:
 
 ```
-Proxy auth allowlist: permissive (any host nominated by your PAC will receive credentials). Set ALPACA_PROXY_AUTH_ALLOWLIST or pass --proxy-auth-allowlist to restrict.
+Proxy auth allowlist: permissive (any host nominated by your PAC will receive credentials). Set ALPACA_PROXY_AUTH_ALLOWLIST to restrict.
 ```
 
 **When to restrict.** The PAC-trust-root assumption can break in two
@@ -113,18 +113,15 @@ ways:
   serve their own PAC.
 
 To defend against these, restrict the set of proxy hosts allowed to
-receive credentials via `--proxy-auth-allowlist` (or the
-`ALPACA_PROXY_AUTH_ALLOWLIST` environment variable):
+receive credentials via the `ALPACA_PROXY_AUTH_ALLOWLIST` environment
+variable:
 
 ```sh
-$ alpaca --proxy-auth-allowlist=.corp.example.com,.proxy-vendor.example.net
-# or, persistently:
 $ export ALPACA_PROXY_AUTH_ALLOWLIST=.corp.example.com,.proxy-vendor.example.net
 $ alpaca
 ```
 
-The flag wins over the environment variable when both are set. Either is
-a comma-separated list of DNS suffixes.
+The value is a comma-separated list of DNS suffixes.
 
 **Syntax:**
 
@@ -161,7 +158,7 @@ a 407.
 When a host is excluded, the log line is:
 
 ```
-Proxy "proxy.example.net" not in proxy-auth allowlist (allowed: [.corp.example.com]); update --proxy-auth-allowlist or ALPACA_PROXY_AUTH_ALLOWLIST to include this host, or unset to permit any host
+Proxy "proxy.example.net" not in proxy-auth allowlist (allowed: [.corp.example.com]); set ALPACA_PROXY_AUTH_ALLOWLIST to include this host, or unset to permit any host
 ```
 
 ### Troubleshooting
@@ -170,8 +167,8 @@ When auth misbehaves, the first thing to check is alpaca's own log:
 
 - `Proxy "…" not in proxy-auth allowlist …` — your allowlist excludes
   the proxy host the PAC selected. Either add the host's DNS suffix to
-  `--proxy-auth-allowlist` / `ALPACA_PROXY_AUTH_ALLOWLIST`, or unset
-  them to permit any host. See "Restricting where Alpaca sends
+  `ALPACA_PROXY_AUTH_ALLOWLIST`, or unset it to permit any host. See
+  "Restricting where Alpaca sends
   credentials" above.
 - `Kerberos ticket no longer valid; skipping Negotiate for …` —
   Negotiate detected an expired or revoked TGT. Run `klist` to confirm,
@@ -278,7 +275,6 @@ can set this manually using the `-C` flag.
 | `-no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS only) |
 | `-enable-socks` | `false` | Allow SOCKS5 proxies from PAC files. SOCKS5 has its own auth model and bypasses alpaca's HTTP authentication chain (and therefore the proxy-auth allowlist). |
 | `-q` | `false` | Quiet mode, suppress all log output. Also suppresses the proxy-auth-allowlist startup nudge. |
-| `-proxy-auth-allowlist` | (none) | Comma-separated DNS suffixes that may receive proxy credentials. Applies uniformly to Basic, NTLM, and Negotiate. Default is permissive (any host); the literal value `*` is the explicit permissive form. Overrides `ALPACA_PROXY_AUTH_ALLOWLIST` when set. See "Restricting where Alpaca sends credentials" above. |
 | `-version` | `false` | Print version and exit |
 
 ### Environment variables
@@ -287,7 +283,7 @@ can set this manually using the `-C` flag.
 |----------|-------------|
 | `NTLM_CREDENTIALS`            | `username@DOMAIN:hash` (run `alpaca -H` to generate) |
 | `BASIC_CREDENTIALS`           | `login:password` for HTTP Basic proxy auth |
-| `ALPACA_PROXY_AUTH_ALLOWLIST` | Comma-separated DNS suffixes that may receive proxy credentials. Applies uniformly to Basic, NTLM, and Negotiate. Default is permissive (any host); set to `*` for the explicit permissive form. Overridden by `--proxy-auth-allowlist` when both are set. See "Restricting where Alpaca sends credentials" above. |
+| `ALPACA_PROXY_AUTH_ALLOWLIST` | Comma-separated DNS suffixes that may receive proxy credentials. Applies uniformly to Basic, NTLM, and Negotiate. Default is permissive (any host); set to `*` for the explicit permissive form. See "Restricting where Alpaca sends credentials" above. |
 | `NTLM_USERNAME` / `NTLM_DOMAIN` | Used by the keyring credential source (Linux/GNOME, Windows) |
 
 ---

@@ -34,15 +34,13 @@ type fakeAuth struct {
 	header      string // value to set in Proxy-Authorization
 	status      int    // status to return without hitting rt; 0 means call rt
 	err         error  // if non-nil, return (nil, err) instead of round-tripping
-	safe        bool   // value returned by safeWithoutChallenge()
 	hostFilter  func(string) bool
 	calls       atomic.Int32
 	mu          sync.Mutex
 	seenHeaders []string // observed Proxy-Authorization on entry to do()
 }
 
-func (f *fakeAuth) scheme() string             { return f.name }
-func (f *fakeAuth) safeWithoutChallenge() bool { return f.safe }
+func (f *fakeAuth) scheme() string { return f.name }
 
 func (f *fakeAuth) applicableTo(host string) bool {
 	if f.hostFilter == nil {
@@ -71,16 +69,10 @@ func (f *fakeAuth) do(req *http.Request, rt http.RoundTripper) (*http.Response, 
 	return rt.RoundTrip(req)
 }
 
-// realisticFake builds a fakeAuth that mimics one of the real
-// authenticators' safety properties: NTLM/Negotiate are
-// safe-without-challenge, Basic is not.
+// realisticFake builds a fakeAuth scoped to a single advertised
+// scheme.
 func realisticFake(name, header string) *fakeAuth {
-	f := &fakeAuth{name: name, header: header}
-	switch name {
-	case "Negotiate", "NTLM":
-		f.safe = true
-	}
-	return f
+	return &fakeAuth{name: name, header: header}
 }
 
 func TestNewAuthChain(t *testing.T) {
@@ -143,9 +135,14 @@ func TestAuthChainPick(t *testing.T) {
 			want:    nil,
 		},
 		{
-			name:    "empty schemes returns only safeWithoutChallenge methods (no Basic)",
+			name:    "empty schemes refuses every scheme (RFC 9110)",
 			schemes: nil,
-			want:    []proxyAuthenticator{neg, ntlm},
+			want:    nil,
+		},
+		{
+			name:    "empty (non-nil) schemes refuses every scheme (RFC 9110)",
+			schemes: []string{},
+			want:    nil,
 		},
 	}
 	for _, tc := range tests {
@@ -156,11 +153,16 @@ func TestAuthChainPick(t *testing.T) {
 	}
 }
 
-func TestAuthChainPickRefusesBasicWhenUnadvertised(t *testing.T) {
-	// F-1 / F-4 fix: Basic-only chain must refuse to act when proxy
-	// returned 407 with no parseable Proxy-Authenticate.
+func TestAuthChainPickRefusesAllWhenNoSchemesAdvertised(t *testing.T) {
+	// RFC 9110 §11.7.1 requires a proxy to send at least one
+	// Proxy-Authenticate header in every 407. A 407 with no parseable
+	// header is a protocol violation; alpaca refuses to send any
+	// credential (Basic, NTLM, or Negotiate) in that case, matching
+	// what Chromium and Firefox do.
+	neg := realisticFake("Negotiate", "Negotiate t")
+	ntlm := realisticFake("NTLM", "NTLM t")
 	basic := newBasicAuthenticator("user:pass")
-	chain := newAuthChain(basic)
+	chain := newAuthChain(neg, ntlm, basic)
 	require.NotNil(t, chain)
 	assert.Empty(t, chain.pick(nil, "proxy.example"))
 	assert.Empty(t, chain.pick([]string{}, "proxy.example"))
@@ -489,13 +491,14 @@ func TestAuthChainPickAllowlist(t *testing.T) {
 		assert.Equal(t, []proxyAuthenticator{neg, ntlm}, got)
 	})
 
-	t.Run("non-matching host blocks even safe-without-challenge methods", func(t *testing.T) {
-		// F-1 / F-4 corollary: even Negotiate, which is safe to send
-		// unsolicited, must not be sent to a non-allowlisted host.
+	t.Run("non-matching host blocks even advertised methods", func(t *testing.T) {
+		// The host-allowlist gate runs before scheme matching, so an
+		// excluded host receives no credentials even when the proxy
+		// advertised schemes the chain knows how to handle.
 		chain := newAuthChain(neg, ntlm)
 		require.NotNil(t, chain)
 		chain.hostAllowlist = parseAuthAllowlist(".corp.example")
-		got := chain.pick(nil, "evil.example")
+		got := chain.pick([]string{"negotiate", "ntlm"}, "evil.example")
 		assert.Empty(t, got)
 	})
 
@@ -515,20 +518,6 @@ func TestAuthChainPickAllowlist(t *testing.T) {
 		chain.hostAllowlist = parseAuthAllowlist(".corp.example")
 		got := chain.pick([]string{"basic"}, "proxy.corp.example")
 		assert.Equal(t, []proxyAuthenticator{basic}, got)
-	})
-
-	t.Run("allowlisted host still refuses Basic on no-schemes 407 (F-1/F-4)", func(t *testing.T) {
-		// The allowlist gate must AND with the F-1/F-4 downgrade
-		// defence, not replace it. Even on a legitimate allowlisted
-		// host, Basic credentials must never be sent in response to
-		// a 407 with no parseable Proxy-Authenticate header.
-		chain := newAuthChain(basic)
-		require.NotNil(t, chain)
-		chain.hostAllowlist = parseAuthAllowlist(".corp.example")
-		got := chain.pick(nil, "proxy.corp.example")
-		assert.Empty(t, got,
-			"Basic must never be sent against an unadvertised 407, "+
-				"even when the host is on the allowlist")
 	})
 
 	t.Run("trailing-dot proxy host respects allowlist", func(t *testing.T) {

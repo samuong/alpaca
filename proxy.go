@@ -46,12 +46,10 @@ var tlsClientConfig *tls.Config
 //  2. Authenticators that survive (1) are intersected with the
 //     advertised schemes (case-insensitive match against scheme()).
 //     Methods not on that list are dropped.
-//  3. If the proxy didn't advertise any parseable scheme, only
-//     authenticators returning safeWithoutChallenge() == true are
-//     kept. This is the F-1 / F-4 downgrade defence: schemes whose
-//     first message contains credential material (Basic) MUST opt
-//     out, otherwise a hostile endpoint returning a bare 407 could
-//     harvest the credential.
+//  3. If the proxy returned a 407 with no parseable Proxy-Authenticate
+//     header at all, the picker returns ZERO candidates — RFC 9110
+//     §11.7.1 requires the header to be present, and Chrome/Firefox
+//     also refuse to authenticate against a header-less 407.
 //
 // proxy.go's retry helpers iterate the resulting candidate list,
 // calling do() on each in turn. Any error from do() aborts the chain.
@@ -76,20 +74,6 @@ type proxyAuthenticator interface {
 	// chain falls through to the next method instead of failing
 	// mid-flight.
 	applicableTo(proxyHost string) bool
-
-	// safeWithoutChallenge reports whether this authenticator may be
-	// used against a proxy that returned 407 with no parseable
-	// Proxy-Authenticate header. The contract is: "is my first
-	// message safe to send before the proxy has explicitly named me
-	// as a supported scheme?". Schemes whose first message contains
-	// credential MATERIAL (e.g. Basic, where the first byte sent IS
-	// the password) MUST return false. Schemes that initiate with a
-	// non-credential probe (NTLM Type 1, SPNEGO initial token) may
-	// return true even though those probes do contain identifying
-	// information about the principal — they don't contain a secret
-	// the attacker doesn't already have a chance to capture from
-	// challenge-response traffic.
-	safeWithoutChallenge() bool
 
 	// do performs a single authenticated request after the proxy has
 	// returned 407 Proxy Authentication Required. The implementation

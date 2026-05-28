@@ -30,13 +30,12 @@ import (
 // schemes like NTLM and Negotiate are connection-bound (RFC 4559) and must
 // not share a socket with a different scheme's state machine.
 //
-// hostAllowlist (sourced from --proxy-auth-allowlist or
-// ALPACA_PROXY_AUTH_ALLOWLIST) is an optional list of DNS suffixes that
-// restricts which proxy hostnames may receive ANY proxy credential —
-// Basic, NTLM, or Negotiate. A nil allowlist is the default and permits
-// every host: alpaca will offer whatever credentials the proxy advertises.
-// Set the field to a non-empty slice from parseAuthAllowlist to enforce
-// the restriction.
+// hostAllowlist (sourced from the ALPACA_PROXY_AUTH_ALLOWLIST env var) is
+// an optional list of DNS suffixes that restricts which proxy hostnames
+// may receive ANY proxy credential — Basic, NTLM, or Negotiate. A nil
+// allowlist is the default and permits every host: alpaca will offer
+// whatever credentials the proxy advertises. Set the field to a non-empty
+// slice from parseAuthAllowlist to enforce the restriction.
 type authChain struct {
 	methods       []proxyAuthenticator
 	hostAllowlist []string // nil = permit any host (the default)
@@ -51,7 +50,7 @@ type authChain struct {
 // The returned chain's hostAllowlist defaults to nil (permit any host).
 // Callers that need to restrict credential exposure should set it before
 // the chain is consulted, e.g. via parseAuthAllowlist on the user's
-// --proxy-auth-allowlist / ALPACA_PROXY_AUTH_ALLOWLIST value.
+// ALPACA_PROXY_AUTH_ALLOWLIST value.
 func newAuthChain(methods ...proxyAuthenticator) *authChain {
 	var filtered []proxyAuthenticator
 	for _, m := range methods {
@@ -73,7 +72,7 @@ var errNoMatchingAuthMethod = errors.New("no matching authentication method for 
 
 // pick returns the authenticators (in chain order) that should be tried
 // against a 407 response that advertised the given schemes from the
-// given proxy host. Filtering is the union of four policies, in order:
+// given proxy host. Filtering is the union of three policies, in order:
 //
 //  1. Host allowlist (chain-level). If hostAllowlist is non-empty and
 //     proxyHost doesn't match any suffix, ZERO methods are returned —
@@ -84,12 +83,11 @@ var errNoMatchingAuthMethod = errors.New("no matching authentication method for 
 //     allowlist (e.g. Negotiate has no Kerberos ticket) so the chain
 //     falls through to the next method instead of failing.
 //  3. Scheme advertisement: only methods whose scheme() is in the
-//     advertised schemes set are considered.
-//  4. Empty-schemes (unadvertised) fallback: when the proxy did not
-//     advertise any parseable scheme, only methods that opt in via
-//     safeWithoutChallenge() are considered. This is the F-1/F-4
-//     downgrade defence: Basic's first message IS the credential, so
-//     it must NEVER be tried unless the proxy explicitly said so.
+//     advertised schemes set are considered. RFC 9110 §11.7.1 requires
+//     a proxy to send at least one Proxy-Authenticate header in every
+//     407 response; if the schemes set is empty (either because no
+//     header was sent or because none parsed) alpaca refuses to send
+//     any credentials. Chrome and Firefox take the same line.
 func (c *authChain) pick(schemes []string, proxyHost string) []proxyAuthenticator {
 	if c == nil || len(c.methods) == 0 {
 		return nil
@@ -101,9 +99,20 @@ func (c *authChain) pick(schemes []string, proxyHost string) []proxyAuthenticato
 	// self-diagnose.
 	if !c.allowedHost(proxyHost) {
 		log.Printf("Proxy %q not in proxy-auth allowlist (allowed: %v); "+
-			"update --proxy-auth-allowlist or ALPACA_PROXY_AUTH_ALLOWLIST "+
-			"to include this host, or unset to permit any host", proxyHost,
-			c.hostAllowlist)
+			"set ALPACA_PROXY_AUTH_ALLOWLIST to include this host, "+
+			"or unset to permit any host", proxyHost, c.hostAllowlist)
+		return nil
+	}
+	// RFC 9110 alignment: a 407 without a parseable Proxy-Authenticate
+	// header is a protocol violation. Refuse to send credentials of any
+	// scheme — Basic's first message IS the credential, and the
+	// connection-bound NTLM/Negotiate handshakes still leak intent
+	// (workstation hostname, SPN) to a misbehaving proxy. Browsers do
+	// the same.
+	if len(schemes) == 0 {
+		log.Printf("Proxy %q returned 407 with no parseable "+
+			"Proxy-Authenticate header; refusing to send credentials",
+			proxyHost)
 		return nil
 	}
 	// Per-authenticator runtime policy (e.g. Negotiate's ticket-presence
@@ -120,26 +129,6 @@ func (c *authChain) pick(schemes []string, proxyHost string) []proxyAuthenticato
 	}
 	if len(applicable) == 0 {
 		return nil
-	}
-
-	if len(schemes) == 0 {
-		// Fallback path: no Proxy-Authenticate parsed. Only allow
-		// methods that explicitly opt in via safeWithoutChallenge().
-		// Today that's NTLM (schemeNTLM) and Negotiate (schemeNegotiate);
-		// schemeBasic is excluded because Basic's first message IS the
-		// credential — see proxyAuthenticator interface doc.
-		var safe []proxyAuthenticator
-		for _, m := range applicable {
-			if m.safeWithoutChallenge() {
-				safe = append(safe, m)
-			}
-		}
-		if len(safe) == 0 {
-			log.Printf("Proxy did not advertise any scheme and no " +
-				"safe-without-challenge authenticator is configured; " +
-				"refusing to send credentials")
-		}
-		return safe
 	}
 
 	advertised := make(map[string]bool, len(schemes))
@@ -185,13 +174,12 @@ func (c *authChain) allowedHost(host string) bool {
 }
 
 // parseAuthAllowlist parses a comma-separated list of DNS suffixes from
-// the user-supplied allowlist (either the --proxy-auth-allowlist flag or
-// the ALPACA_PROXY_AUTH_ALLOWLIST env var). Each entry is normalised to
-// lower-case and dot-prefixed canonical form (".corp.example") so
-// allowedHost can do a single suffix match. The literal value "*" is
-// translated to a nil slice — the same shape as the default — so callers
-// can treat "permissive" uniformly. Malformed entries are dropped with a
-// warning rather than failing parsing.
+// the user-supplied allowlist (the ALPACA_PROXY_AUTH_ALLOWLIST env var).
+// Each entry is normalised to lower-case and dot-prefixed canonical form
+// (".corp.example") so allowedHost can do a single suffix match. The
+// literal value "*" is translated to a nil slice — the same shape as the
+// default — so callers can treat "permissive" uniformly. Malformed
+// entries are dropped with a warning rather than failing parsing.
 //
 // Returns nil for empty input, for "*", or when every entry was
 // malformed. A nil return therefore always means "no restriction".

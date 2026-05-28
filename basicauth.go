@@ -31,11 +31,6 @@ func newBasicAuthenticator(credentials string) *basicAuthenticator {
 
 func (b *basicAuthenticator) scheme() string { return "Basic" }
 
-// safeWithoutChallenge reports false: Basic transmits credentials in
-// its first request, so it must not be used unless the proxy has
-// explicitly advertised "Basic".
-func (b *basicAuthenticator) safeWithoutChallenge() bool { return false }
-
 // applicableTo always returns true: Basic has no host policy.
 func (b *basicAuthenticator) applicableTo(string) bool { return true }
 

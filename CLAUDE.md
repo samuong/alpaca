@@ -97,11 +97,10 @@ than at startup, so a Kerberos ticket that arrives after alpaca starts
 or because the user runs `kinit` mid-session) is honoured automatically
 without a restart.
 
-Downgrade refusal: when the proxy returns 407 with no parseable
-`Proxy-Authenticate`, only authenticators that opt in via
-`safeWithoutChallenge() bool` are considered. Today that's NTLM and
-Negotiate; Basic is excluded so its credentials are never sent without an
-explicit server advertisement.
+RFC 9110 alignment: a 407 without a parseable `Proxy-Authenticate`
+header is a protocol violation. The picker returns zero candidates in
+that case so no credentials of any scheme are sent. Chrome and Firefox
+take the same line.
 
 See `multiauth.go` for the picker's host-policy and per-authenticator
 applicability rules.
@@ -110,8 +109,7 @@ applicability rules.
 
 - `proxyAuthenticator` (in `proxy.go`) — implemented by `authenticator`
   (NTLM), `basicAuthenticator`, and `negotiateAuthenticator`. Methods:
-  `do(req, rt) (resp, err)`, `scheme()`, `safeWithoutChallenge()`,
-  `applicableTo(host)`.
+  `do(req, rt) (resp, err)`, `scheme()`, `applicableTo(host)`.
 - `*authChain` (in `multiauth.go`) — picks the ordered list of
   authenticators to try given the schemes the proxy advertised. NOT a
   `proxyAuthenticator` itself.
