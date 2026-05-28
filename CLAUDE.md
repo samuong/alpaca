@@ -208,33 +208,6 @@ Runs on every push and PR to master:
 
 Triggered on tags matching `v*`. Creates a GitHub release and uploads platform-specific binaries.
 
-## CLI Flags
-
-| Flag        | Default      | Description                                    |
-|-------------|-------------|------------------------------------------------|
-| `-l`        | `localhost`  | Listen address (can be specified multiple times)|
-| `-p`        | `3128`       | Port number                                    |
-| `-C`        | (none)       | PAC file URL override                          |
-| `-d`        | (none)       | NTLM domain                                    |
-| `-u`        | current user | Username for proxy auth (NTLM)                 |
-| `-H`        | false        | Print hashed NTLM credentials and exit         |
-| `-w`        | `0`          | Seconds to wait at startup for a Kerberos ticket (macOS) |
-| `--no-kerberos` | false    | Disable Kerberos auto-detection (macOS)        |
-| `--enable-socks` | false   | Allow SOCKS5 proxies from PAC files (bypasses the HTTP auth chain) |
-| `-q`        | false        | Quiet mode — suppress all log output (also suppresses startup nudges and `--debug`) |
-| `--debug`   | false        | Verbose troubleshooting output (DEBUG-prefixed lines explaining picker + auth decisions); silently suppressed by `-q` |
-| `--proxy-auth-allowlist` | (none) | Comma-separated DNS suffixes allowed to receive proxy credentials. Default permissive; overrides ALPACA_PROXY_AUTH_ALLOWLIST. |
-| `-version`  | false        | Print version and exit                         |
-
-## Environment variables
-
-| Variable                       | Purpose                                                   |
-|--------------------------------|-----------------------------------------------------------|
-| `NTLM_CREDENTIALS`             | `username@DOMAIN:hash` (generate with `alpaca -H`)        |
-| `BASIC_CREDENTIALS`            | `login:password` for Basic auth                           |
-| `ALPACA_PROXY_AUTH_ALLOWLIST`  | Comma-separated DNS suffixes that may receive proxy credentials. Applies to Basic, NTLM, and Negotiate uniformly. Default is permissive (any host); set to `*` for the explicit permissive form. Overridden by `--proxy-auth-allowlist` when both are set. |
-| `NTLM_USERNAME`/`NTLM_DOMAIN`  | Used by the keyring credential source                     |
-
 ## Key Dependencies
 
 | Dependency                    | Purpose                          |

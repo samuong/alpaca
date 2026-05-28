@@ -1,6 +1,6 @@
 # Kerberos end-to-end test fixture
 
-This directory contains the Docker fixture that backs `kerberos_e2e_test.go`.
+This directory contains the Docker fixture that backs `kerberos_integration_test.go`.
 It is intentionally separate from the standard test suite because it requires
 Docker (or Podman with a running machine) and takes ~30s on first run.
 
