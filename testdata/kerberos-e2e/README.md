@@ -34,9 +34,6 @@ The Dockerfile builds a single image that runs:
   dependency, which is important on developer laptops behind corporate
   egress proxies.
 
-All identifiers are fictitious. Nothing here is bound to any real
-organisation or domain.
-
 ## Running the test
 
 ```sh
