@@ -66,13 +66,6 @@ func main() {
 	noKerberos := flag.Bool("no-kerberos", false,
 		"disable Kerberos/Negotiate auto-detection (macOS only)")
 	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
-	debug := flag.Bool("debug", false,
-		"verbose troubleshooting log output. Adds DEBUG-prefixed "+
-			"lines explaining the picker's per-407 reasoning: "+
-			"schemes the proxy advertised, the proxy-auth "+
-			"allowlist in effect, the SPN alpaca asked the KDC "+
-			"for, and the candidate methods chosen. Silently "+
-			"suppressed by -q.")
 	version := flag.Bool("version", false, "print version number")
 	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
 	authAllowlist := flag.String("proxy-auth-allowlist", "",
