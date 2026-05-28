@@ -103,15 +103,8 @@ Downgrade refusal: when the proxy returns 407 with no parseable
 Negotiate; Basic is excluded so its credentials are never sent without an
 explicit server advertisement.
 
-Host policy: enforced at the picker level (`*authChain.allowedHost`) and
-sourced from `--proxy-auth-allowlist` / `ALPACA_PROXY_AUTH_ALLOWLIST`. The
-allowlist is a list of DNS suffixes that may receive any kind of proxy
-credential; default is permissive (any host). When the allowlist is set and
-the proxy hostname doesn't match, the picker returns zero candidates and
-no authenticator is consulted. Per-authenticator `applicableTo(host)`
-remains for runtime preconditions unrelated to the allowlist — e.g.
-`negotiateAuthenticator.applicableTo` returns false when no Kerberos ticket
-is currently available, so the chain falls through to the next method.
+See `multiauth.go` for the picker's host-policy and per-authenticator
+applicability rules.
 
 ### Key Interfaces
 
