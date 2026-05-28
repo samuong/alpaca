@@ -206,13 +206,24 @@ squid -N -z -f /etc/squid/squid.conf 2>/dev/null || true
 echo "==> Starting KDC"
 krb5kdc -P /run/krb5kdc.pid
 
-# Wait for the KDC to start listening
+# Wait for the KDC to start listening. If it never does, fail loudly
+# rather than silently falling through into the squid startup that
+# depends on it — a half-running container is harder to diagnose than
+# a clean container start failure.
+kdc_ready=0
 for i in $(seq 1 20); do
     if (echo > /dev/tcp/127.0.0.1/88) >/dev/null 2>&1; then
+        kdc_ready=1
         break
     fi
     sleep 0.2
 done
+if [ "$kdc_ready" != "1" ]; then
+    echo "==> KDC failed to start listening on 127.0.0.1:88 within 4s" >&2
+    echo "==> tail /var/log/krb5kdc.log:" >&2
+    tail -20 /var/log/krb5kdc.log 2>/dev/null || true
+    exit 1
+fi
 
 # 7. Start an in-container upstream HTTP server so squid has somewhere
 # to forward to. The test asserts a 200 from this server, so its presence
