@@ -36,13 +36,13 @@ golangci-lint run
 alpaca/
 ├── .github/workflows/     # CI (ci.yml) and release (release.yml) pipelines
 ├── assets/                # Logo and banner images
-├── go.mod / go.sum        # Go module definition (Go 1.22.3+)
+├── go.mod / go.sum        # Go module definition (Go 1.25.0+)
 ├── main.go                # Entry point, CLI flags, server bootstrap
 ├── proxy.go               # Core proxy handler (CONNECT tunneling, request forwarding)
 ├── transport.go           # Low-level connection management for CONNECT tunnels
 ├── authenticator.go       # NTLM authentication
 ├── basicauth.go           # Basic HTTP proxy authentication
-├── multiauth.go           # Multi-method authenticator with per-proxy caching
+├── multiauth.go           # authChain: picks authenticators for a 407 response
 ├── kerberos*.go           # Kerberos/Negotiate auth (macOS-specific)
 ├── credentials.go         # Credential sourcing (terminal, env, keyring)
 ├── keyring*.go            # System keyring integration per platform
@@ -73,17 +73,52 @@ Requests flow through a middleware chain built in `main.go:createServer`:
 ### Authentication Chain
 
 Authentication methods are tried in order via `multiauth.go`. The chain is:
-Negotiate → NTLM → Basic (matching Chrome's hierarchy). The multi-authenticator selects methods based on the proxy's `Proxy-Authenticate` response header and caches which method works per proxy host.
+Negotiate → NTLM → Basic (matching Chrome's hierarchy). The `*authChain`
+type is a *picker*: given the schemes the proxy advertised in its 407
+response, plus the proxy hostname, it returns the ordered list of methods
+the caller should attempt. `proxy.go` owns the iteration and the
+connection-lifecycle invariants:
+
+- CONNECT path (`retryConnectWithAuth`) re-dials the proxy on a fresh TCP
+  connection between methods. This is required because NTLM and Negotiate
+  are connection-bound (RFC 4559) and must not share a socket with another
+  scheme's state machine.
+- Plain HTTP path (`retryProxyRequestWithAuth`) gives each method its own
+  cloned `*http.Transport` so its connection pool is isolated; the
+  underlying `http.Transport` already manages connection reuse for NTLM's
+  Type 1 → Type 3 sequence within a single method.
+- The header `Proxy-Authorization` is cleared between attempts.
+- Any error returned by a method aborts the chain (this is the
+  abort-on-error invariant — see test `TestRetryProxyRequest_AbortsChainOnError`).
+
+Negotiate availability is re-checked per-407 via `applicableTo()` rather
+than at startup, so a Kerberos ticket that arrives after alpaca starts
+(e.g. because Apple SSO finishes after the LaunchAgent launches alpaca,
+or because the user runs `kinit` mid-session) is honoured automatically
+without a restart.
+
+RFC 9110 alignment: a 407 without a parseable `Proxy-Authenticate`
+header is a protocol violation. The picker returns zero candidates in
+that case so no credentials of any scheme are sent. Chrome and Firefox
+take the same line.
+
+See `multiauth.go` for the picker's host-policy and per-authenticator
+applicability rules.
 
 ### Key Interfaces
 
-- `proxyAuthenticator` (in `proxy.go`) — implemented by `authenticator` (NTLM), `basicAuthenticator`, `negotiateAuthenticator`, and `multiAuthenticator`
+- `proxyAuthenticator` (in `proxy.go`) — implemented by `authenticator`
+  (NTLM), `basicAuthenticator`, and `negotiateAuthenticator`. Methods:
+  `do(req, rt) (resp, err)`, `scheme()`, `applicableTo(host)`.
+- `*authChain` (in `multiauth.go`) — picks the ordered list of
+  authenticators to try given the schemes the proxy advertised. NOT a
+  `proxyAuthenticator` itself.
 
 ## Build & Test
 
 ### Requirements
 
-- **Go 1.22.3+**
+- **Go 1.25.0+**
 - **CGO_ENABLED=1** (required for builds and tests)
 
 ### Build
@@ -155,7 +190,7 @@ Runs on every push and PR to master:
 
 | Job      | What it does                                          |
 |----------|-------------------------------------------------------|
-| format   | Validates `gofmt` on Ubuntu with Go 1.22             |
+| format   | Validates `gofmt` on Ubuntu with Go 1.25             |
 | lint     | Runs `golangci-lint`                                  |
 | test     | Runs `go test ./...` on macOS, Ubuntu (x86/ARM), Windows |
 | build    | Cross-compiles for darwin/linux/windows (amd64/arm64) |
@@ -163,21 +198,6 @@ Runs on every push and PR to master:
 ### Release (`.github/workflows/release.yml`)
 
 Triggered on tags matching `v*`. Creates a GitHub release and uploads platform-specific binaries.
-
-## CLI Flags
-
-| Flag        | Default      | Description                                    |
-|-------------|-------------|------------------------------------------------|
-| `-l`        | `localhost`  | Listen address (can be specified multiple times)|
-| `-p`        | `3128`       | Port number                                    |
-| `-C`        | (none)       | PAC file URL override                          |
-| `-d`        | (none)       | NTLM domain                                    |
-| `-u`        | current user | Username for proxy auth (NTLM)                 |
-| `-H`        | false        | Print hashed NTLM credentials and exit         |
-| `-k`        | false        | Enable Kerberos/Negotiate authentication (macOS)|
-| `-w`        | `30`         | Kerberos ticket wait time in seconds (macOS)   |
-| `-q`        | false        | Quiet mode — suppress all log output           |
-| `-version`  | false        | Print version and exit                         |
 
 ## Key Dependencies
 

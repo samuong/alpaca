@@ -126,27 +126,56 @@ import (
 	"unsafe"
 )
 
-type negotiateAuthenticator struct{}
+// negotiateAuthenticator implements proxyAuthenticator using SPNEGO
+// over GSS.framework on macOS. It does NOT enforce a host allowlist
+// itself — that's the picker's job (see *authChain.allowedHost), which
+// applies uniformly to Basic, NTLM, and Negotiate. The only per-method
+// applicability check Negotiate enforces is "do we currently have a
+// Kerberos ticket?" — re-checked on every 407 so a ticket that
+// arrives mid-session (Apple SSO completing, kinit, etc.) is honoured
+// automatically without an alpaca restart.
+type negotiateAuthenticator struct {
+	// hasTicket is the ticket-availability check used by applicableTo
+	// at picker time. Defaults to checkKerberosTicket; tests inject
+	// their own to avoid depending on the developer's real Kerberos
+	// state.
+	hasTicket func() bool
+}
 
-// newNegotiateAuthenticator checks for a Kerberos ticket and returns a
-// negotiateAuthenticator if one is available. If waitSeconds > 0 and no ticket
-// is found immediately, it polls every second up to the given timeout.
-// Returns nil if no ticket is available.
+// newNegotiateAuthenticator returns a negotiateAuthenticator that will
+// be consulted on every 407 response. It does NOT require a Kerberos
+// ticket to exist at the moment alpaca starts: applicableTo() re-checks
+// ticket availability per-request, so a ticket that arrives later (e.g.
+// because Apple SSO finishes after alpaca, or the user runs kinit
+// mid-session) starts being honoured at the next 407 without a
+// restart.
+//
+// waitSeconds is the optional startup wait: if > 0 and no ticket is
+// present, alpaca will block here for up to waitSeconds polling for one
+// to arrive. This is purely cosmetic — it makes the startup log line
+// say "ticket found" rather than "no ticket yet". A value of 0 means
+// "don't wait at startup, just use whatever is in the cache when each
+// request comes through".
 func newNegotiateAuthenticator(waitSeconds int) proxyAuthenticator {
-	if checkKerberosTicket() {
+	auth := &negotiateAuthenticator{hasTicket: checkKerberosTicket}
+	switch {
+	case checkKerberosTicket():
 		log.Println("Kerberos ticket found")
-		return &negotiateAuthenticator{}
+	case waitSeconds <= 0:
+		log.Println("No Kerberos ticket at startup; will check again " +
+			"on each 407 response so a ticket that arrives later " +
+			"(e.g. via kinit or Apple SSO) is honoured automatically")
+	default:
+		log.Printf("No Kerberos ticket found, waiting up to %d seconds...",
+			waitSeconds)
+		if waitForKerberosTicket(waitSeconds) {
+			log.Println("Kerberos ticket found")
+		} else {
+			log.Println("No Kerberos ticket found after waiting; " +
+				"will continue to check on each 407 response")
+		}
 	}
-	if waitSeconds <= 0 {
-		return nil
-	}
-	log.Printf("No Kerberos ticket found, waiting up to %d seconds...", waitSeconds)
-	if waitForKerberosTicket(waitSeconds) {
-		log.Println("Kerberos ticket found")
-		return &negotiateAuthenticator{}
-	}
-	log.Println("No Kerberos ticket found after waiting")
-	return nil
+	return auth
 }
 
 // checkKerberosTicket returns true if valid Kerberos credentials exist.
@@ -156,16 +185,25 @@ func checkKerberosTicket() bool {
 	return C.hasCredential() == 1
 }
 
-// waitForKerberosTicket polls for a Kerberos ticket every second up to timeout.
+// waitForKerberosTicket polls for a Kerberos ticket every second up to
+// the given timeout, returning true as soon as one becomes available.
+// The poll interval is deliberately short so that a `-w 1` invocation
+// performs at least one check before giving up.
 func waitForKerberosTicket(timeoutSeconds int) bool {
+	if timeoutSeconds <= 0 {
+		return false
+	}
 	deadline := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(2 * time.Second)
+	const pollInterval = time.Second
+	for {
 		if checkKerberosTicket() {
 			return true
 		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(pollInterval)
 	}
-	return false
 }
 
 // generateSPNEGOToken creates a SPNEGO token for the given proxy host using
@@ -195,6 +233,38 @@ func generateSPNEGOToken(proxyHost string) ([]byte, error) {
 }
 
 func (n *negotiateAuthenticator) scheme() string { return "Negotiate" }
+
+// applicableTo enforces two policies at picker time:
+//
+//  1. The proxy host must be non-empty (we cannot generate an SPN
+//     without it).
+//  2. A valid Kerberos ticket must currently be available. We re-check
+//     on every 407 because the user's ticket may have expired or been
+//     revoked since alpaca started; if it has, returning false here
+//     causes the picker to omit Negotiate and fall through to NTLM /
+//     Basic instead of failing the chain on a stale-ticket error.
+//
+// Host policy (the ALPACA_PROXY_AUTH_ALLOWLIST gate) is enforced at the
+// picker level in *authChain.pick, uniformly across Basic, NTLM, and
+// Negotiate, so this method intentionally doesn't repeat that check.
+//
+// Returning false is silent fall-through; the chain proceeds to the
+// next configured authenticator.
+func (n *negotiateAuthenticator) applicableTo(proxyHost string) bool {
+	if proxyHost == "" {
+		return false
+	}
+	check := n.hasTicket
+	if check == nil {
+		check = checkKerberosTicket
+	}
+	if !check() {
+		log.Printf("Kerberos ticket no longer valid; skipping Negotiate for %s",
+			proxyHost)
+		return false
+	}
+	return true
+}
 
 // do performs Negotiate/SPNEGO proxy authentication. It generates a SPNEGO
 // token for the upstream proxy and sends the request with a

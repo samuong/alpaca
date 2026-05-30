@@ -28,14 +28,13 @@ import (
 )
 
 type basicAuthServer struct {
-	t        *testing.T
 	expected string // expected base64-encoded credentials
 }
 
 func (s basicAuthServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	hdr := req.Header.Get("Proxy-Authorization")
 	if !strings.HasPrefix(hdr, "Basic ") {
-		w.Header().Set("Proxy-Authenticate", "Basic realm=\"proxy\"")
+		w.Header().Set("Proxy-Authenticate", `Basic realm="proxy"`)
 		w.WriteHeader(http.StatusProxyAuthRequired)
 		fmt.Fprint(w, "Proxy authentication required") //nolint:errcheck
 		return
@@ -52,7 +51,7 @@ func (s basicAuthServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func TestBasicAuth(t *testing.T) {
 	creds := "alice:s3cret"
 	encoded := base64.StdEncoding.EncodeToString([]byte(creds))
-	server := httptest.NewServer(basicAuthServer{t, encoded})
+	server := httptest.NewServer(basicAuthServer{encoded})
 	defer server.Close()
 	serverAddr := server.Listener.Addr().String()
 	tr := &http.Transport{Proxy: http.ProxyURL(&url.URL{Host: serverAddr})}
@@ -62,6 +61,7 @@ func TestBasicAuth(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, http.StatusProxyAuthRequired, resp.StatusCode)
+
 	auth := newBasicAuthenticator(creds)
 	resp, err = auth.do(req, tr)
 	require.NoError(t, err)
@@ -72,4 +72,10 @@ func TestBasicAuth(t *testing.T) {
 func TestBasicAuthScheme(t *testing.T) {
 	auth := newBasicAuthenticator("user:pass")
 	assert.Equal(t, "Basic", auth.scheme())
+}
+
+func TestNewBasicAuthenticatorEncoding(t *testing.T) {
+	auth := newBasicAuthenticator("user:p@ss w0rd")
+	want := base64.StdEncoding.EncodeToString([]byte("user:p@ss w0rd"))
+	assert.Equal(t, want, auth.encoded)
 }

@@ -34,6 +34,9 @@ type authenticator struct {
 
 func (a authenticator) scheme() string { return "NTLM" }
 
+// applicableTo always returns true: NTLM has no host policy.
+func (a authenticator) applicableTo(string) bool { return true }
+
 func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Response, error) {
 	hostname, _ := os.Hostname() // in case of error, just use the zero value ("") as hostname
 	negotiate, err := ntlmssp.NewNegotiateMessage(a.domain, hostname)
@@ -51,8 +54,12 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 		return resp, nil
 	}
 	_ = resp.Body.Close()
-	challenge, err := base64.StdEncoding.DecodeString(
-		strings.TrimPrefix(resp.Header.Get("Proxy-Authenticate"), "NTLM "))
+	encoded := findNTLMChallenge(resp.Header)
+	if encoded == "" {
+		log.Printf("NTLM Type 2 (Challenge) message not found in Proxy-Authenticate")
+		return nil, fmt.Errorf("missing NTLM challenge in proxy response")
+	}
+	challenge, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		log.Printf("Error decoding NTLM Type 2 (Challenge) message: %v", err)
 		return nil, err
@@ -66,6 +73,40 @@ func (a authenticator) do(req *http.Request, rt http.RoundTripper) (*http.Respon
 	req.Header.Set("Proxy-Authorization",
 		"NTLM "+base64.StdEncoding.EncodeToString(authenticate))
 	return rt.RoundTrip(req)
+}
+
+// findNTLMChallenge scans every Proxy-Authenticate header value for an
+// NTLM challenge and returns the base64-encoded Type 2 message.
+//
+// A multi-auth proxy advertises several schemes in its 407 response,
+// e.g. `Proxy-Authenticate: Negotiate`, `Proxy-Authenticate: NTLM`,
+// `Proxy-Authenticate: Basic realm="proxy"`. After alpaca sends NTLM
+// Type 1, the proxy replies with a 407 whose Proxy-Authenticate
+// headers ALSO contain the NTLM Type 2 challenge — but the order is
+// up to the server, so a simple Header.Get() (which returns the first
+// value) can mis-parse if Negotiate or Basic appears first.
+//
+// RFC 7235 §4.3 also allows multiple challenges in a single comma-
+// separated header value, but the NTLM challenge always appears as a
+// dedicated value because it carries an opaque base64 token68. We
+// match case-insensitively on the leading "NTLM " prefix and return
+// only the token portion (no leading space).
+func findNTLMChallenge(header http.Header) string {
+	for _, value := range header.Values("Proxy-Authenticate") {
+		trimmed := strings.TrimSpace(value)
+		// "NTLM " prefix is case-insensitive per RFC 7235 §2.1
+		// ("uses a case-insensitive token as a means to identify the
+		// authentication scheme"). Use EqualFold for the prefix
+		// check so e.g. "ntlm <token>" still matches.
+		if len(trimmed) >= 5 && strings.EqualFold(trimmed[:5], "NTLM ") {
+			return strings.TrimSpace(trimmed[5:])
+		}
+		// A bare "NTLM" with no challenge means the proxy is
+		// re-advertising the scheme without a Type 2 token; that's
+		// not a challenge we can parse, but it's also not a match,
+		// so keep scanning.
+	}
+	return ""
 }
 
 func (a authenticator) String() string {

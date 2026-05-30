@@ -61,8 +61,10 @@ func main() {
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
 	username := flag.String("u", whoAmI(), "username for proxy auth (NTLM)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
-	kerberos := flag.Bool("k", false, "enable Kerberos/Negotiate proxy authentication (macOS only)")
-	kerberosWait := flag.Int("w", 30, "seconds to wait for a Kerberos ticket (macOS only)")
+	kerberosWait := flag.Int("w", 0,
+		"seconds to wait for a Kerberos ticket at startup (macOS only)")
+	noKerberos := flag.Bool("no-kerberos", false,
+		"disable Kerberos/Negotiate auto-detection (macOS only)")
 	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
 	version := flag.Bool("version", false, "print version number")
 	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
@@ -85,9 +87,11 @@ func main() {
 	var basicAuth *basicAuthenticator
 	var a *authenticator
 
+	// Basic credentials come from BASIC_CREDENTIALS to avoid leaking the
+	// password into shell history (mirrors how NTLM_CREDENTIALS works).
 	if value := os.Getenv("BASIC_CREDENTIALS"); value != "" {
 		basicAuth = newBasicAuthenticator(value)
-		log.Println("Basic proxy authentication configured")
+		log.Println("Basic proxy authentication configured from BASIC_CREDENTIALS")
 	}
 
 	// NTLM credential sources
@@ -103,7 +107,16 @@ func main() {
 		var err error
 		a, err = src.getCredentials()
 		if err != nil {
-			log.Printf("Credentials not found, disabling proxy auth: %v", err)
+			// The keyring source returns an error whenever NoMAD
+			// isn't installed and configured — the dominant case
+			// for any developer Mac without the specific NoMAD
+			// plist. The terminal and env-var sources return an
+			// error when the user supplied creds but they're
+			// malformed; today both cases land on this branch
+			// indistinguishably. Log a calm one-liner so a user
+			// without NoMAD doesn't see what looks like an error.
+			log.Println("NTLM credentials not available from the " +
+				"configured source")
 		}
 	}
 
@@ -119,11 +132,26 @@ func main() {
 
 	// Build auth chain: Negotiate → NTLM → Basic (matches Chrome's hierarchy;
 	// Basic has the lowest security score because it sends credentials unencrypted).
+	//
+	// Kerberos/Negotiate is auto-detected on macOS: if a valid ticket is
+	// present at startup (or appears within -w seconds), Negotiate is
+	// added to the chain. No flag needed for the common "Apple SSO is
+	// signed in" case — alpaca behaves like the keyring source.
 	var methods []proxyAuthenticator
-	if *kerberos {
+	if !*noKerberos {
 		if neg := newNegotiateAuthenticator(*kerberosWait); neg != nil {
 			log.Println("Kerberos/Negotiate authentication available")
 			methods = append(methods, neg)
+		} else if *kerberosWait > 0 {
+			// newNegotiateAuthenticator returns nil on platforms
+			// that don't have a Kerberos backend implemented
+			// (currently anything other than macOS). The user
+			// passed -w expecting Kerberos to wait, so warn that
+			// the flag is inert on this platform rather than
+			// silently failing the user's expectation.
+			log.Println("-w was specified but Kerberos/Negotiate " +
+				"is not available on this platform; the flag " +
+				"has no effect")
 		}
 	}
 	if a != nil {
@@ -132,7 +160,34 @@ func main() {
 	if basicAuth != nil {
 		methods = append(methods, basicAuth)
 	}
-	auth := newMultiAuthenticator(methods...)
+	auth := newAuthChain(methods...)
+	if auth != nil {
+		// Resolve the proxy-auth allowlist. Empty / unset is permissive
+		// (any host receives credentials) — parseAuthAllowlist treats
+		// "" as nil. Picking env-var-only (no companion flag) keeps the
+		// "either a flag or an env var, never both" convention the rest
+		// of alpaca already follows for security-sensitive inputs like
+		// BASIC_CREDENTIALS and NTLM_CREDENTIALS.
+		auth.hostAllowlist = parseAuthAllowlist(os.Getenv("ALPACA_PROXY_AUTH_ALLOWLIST"))
+		if len(auth.hostAllowlist) > 0 {
+			log.Printf("Proxy auth allowlist active: %v",
+				auth.hostAllowlist)
+		} else {
+			// Discoverability nudge for users who want to restrict
+			// where credentials go. The default is permissive because
+			// most users trust their PAC implicitly, but a hostile or
+			// MITM'd PAC over plain HTTP could otherwise direct
+			// alpaca to authenticate against attacker-named proxies.
+			// One line at startup; quiet enough not to be noise.
+			log.Println("Proxy auth allowlist: permissive (any host " +
+				"nominated by your PAC will receive credentials). " +
+				"Set ALPACA_PROXY_AUTH_ALLOWLIST to restrict.")
+		}
+	}
+	if auth == nil {
+		log.Println("No authentication methods configured; alpaca will " +
+			"surface proxy 407 responses as 502 Bad Gateway to clients")
+	}
 
 	errch := make(chan error)
 
@@ -155,7 +210,7 @@ func main() {
 	log.Fatal(<-errch)
 }
 
-func createServer(port int, pacurl string, auth proxyAuthenticator, enableSocks bool) *http.Server {
+func createServer(port int, pacurl string, auth *authChain, enableSocks bool) *http.Server {
 	pacWrapper := NewPACWrapper(PACData{Port: port})
 	proxyFinder := NewProxyFinder(pacurl, pacWrapper, enableSocks)
 	proxyHandler := NewProxyHandler(auth, getProxyFromContext, proxyFinder.blockProxy)
