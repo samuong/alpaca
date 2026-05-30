@@ -61,13 +61,12 @@ If the proxy server requires valid authentication credentials, you can provide t
 
 - HTTP Basic authentication, if `BASIC_CREDENTIALS=login:password` is set in
   the environment;
-- Kerberos / Negotiate, **automatically on macOS** when a ticket from Apple
-  SSO / Ticket Viewer / `kinit` is available — no flag required (pass `-w
-  SECONDS` to wait for one at startup, or `--no-kerberos` to opt out).
-  Tickets that arrive *after* alpaca starts are picked up automatically:
-  alpaca re-checks credential availability on every 407 response, so a
-  user who launches alpaca before signing in to Apple SSO does not need
-  to restart it once the ticket lands;
+- Kerberos / Negotiate, **automatically on macOS** when a ticket from Apple SSO
+  / Ticket Viewer / `kinit` is available — no flag required (pass
+  `--no-kerberos` to opt out). Tickets that arrive *after* alpaca starts are
+  picked up automatically: alpaca re-checks credential availability on every
+  407 response, so a user who launches alpaca before signing in to Apple SSO
+  does not need to restart it once the ticket lands;
 - NTLM via the shell prompt, if `-d` is passed;
 - NTLM via the shell environment, if `NTLM_CREDENTIALS` is set;
 - the system keyring (macOS, Windows and Linux/GNOME supported), if none of
@@ -271,7 +270,6 @@ can set this manually using the `-C` flag.
 | `-d` | (none) | Domain of the proxy account (for NTLM auth) |
 | `-u` | current user | Username for proxy auth (NTLM) |
 | `-H` | `false` | Print hashed NTLM credentials and exit |
-| `-w` | `0` | Seconds to wait at startup for a Kerberos ticket (macOS only). Default `0` means "don't block startup": a ticket that arrives mid-session (Apple SSO completing, `kinit`, etc.) is honoured automatically on the next 407, so the wait is rarely needed. Set `-w > 0` when you want the startup log to confirm a ticket is present before the listener comes up. |
 | `-no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS only) |
 | `-enable-socks` | `false` | Allow SOCKS5 proxies from PAC files. SOCKS5 has its own auth model and bypasses alpaca's HTTP authentication chain (and therefore the proxy-auth allowlist). |
 | `-q` | `false` | Quiet mode, suppress all log output. Also suppresses the proxy-auth-allowlist startup nudge. |

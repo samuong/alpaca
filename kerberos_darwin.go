@@ -122,7 +122,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"time"
 	"unsafe"
 )
 
@@ -149,33 +148,15 @@ type negotiateAuthenticator struct {
 // because Apple SSO finishes after alpaca, or the user runs kinit
 // mid-session) starts being honoured at the next 407 without a
 // restart.
-//
-// waitSeconds is the optional startup wait: if > 0 and no ticket is
-// present, alpaca will block here for up to waitSeconds polling for one
-// to arrive. This is purely cosmetic — it makes the startup log line
-// say "ticket found" rather than "no ticket yet". A value of 0 means
-// "don't wait at startup, just use whatever is in the cache when each
-// request comes through".
-func newNegotiateAuthenticator(waitSeconds int) proxyAuthenticator {
-	auth := &negotiateAuthenticator{hasTicket: checkKerberosTicket}
-	switch {
-	case checkKerberosTicket():
+func newNegotiateAuthenticator() proxyAuthenticator {
+	if checkKerberosTicket() {
 		log.Println("Kerberos ticket found")
-	case waitSeconds <= 0:
+	} else {
 		log.Println("No Kerberos ticket at startup; will check again " +
 			"on each 407 response so a ticket that arrives later " +
 			"(e.g. via kinit or Apple SSO) is honoured automatically")
-	default:
-		log.Printf("No Kerberos ticket found, waiting up to %d seconds...",
-			waitSeconds)
-		if waitForKerberosTicket(waitSeconds) {
-			log.Println("Kerberos ticket found")
-		} else {
-			log.Println("No Kerberos ticket found after waiting; " +
-				"will continue to check on each 407 response")
-		}
 	}
-	return auth
+	return &negotiateAuthenticator{hasTicket: checkKerberosTicket}
 }
 
 // checkKerberosTicket returns true if valid Kerberos credentials exist.
@@ -183,27 +164,6 @@ func newNegotiateAuthenticator(waitSeconds int) proxyAuthenticator {
 // tickets managed by Apple SSO and the Ticket Viewer app.
 func checkKerberosTicket() bool {
 	return C.hasCredential() == 1
-}
-
-// waitForKerberosTicket polls for a Kerberos ticket every second up to
-// the given timeout, returning true as soon as one becomes available.
-// The poll interval is deliberately short so that a `-w 1` invocation
-// performs at least one check before giving up.
-func waitForKerberosTicket(timeoutSeconds int) bool {
-	if timeoutSeconds <= 0 {
-		return false
-	}
-	deadline := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
-	const pollInterval = time.Second
-	for {
-		if checkKerberosTicket() {
-			return true
-		}
-		if !time.Now().Before(deadline) {
-			return false
-		}
-		time.Sleep(pollInterval)
-	}
 }
 
 // generateSPNEGOToken creates a SPNEGO token for the given proxy host using

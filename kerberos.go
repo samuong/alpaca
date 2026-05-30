@@ -18,6 +18,6 @@ package main
 
 // newNegotiateAuthenticator is a stub for non-macOS platforms. Kerberos
 // authentication via GSS.framework is only available on macOS.
-func newNegotiateAuthenticator(waitSeconds int) proxyAuthenticator {
+func newNegotiateAuthenticator() proxyAuthenticator {
 	return nil
 }

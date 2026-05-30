@@ -466,7 +466,7 @@ func newInstrumentedBasic(creds string) *instrumentedBasic {
 }
 
 func (fx *e2eFixture) testNegotiateSucceeds(t *testing.T) {
-	neg := newNegotiateAuthenticator(0)
+	neg := newNegotiateAuthenticator()
 	require.NotNil(t, neg, "expected newNegotiateAuthenticator to find the kinit'd ticket")
 	chain := newAuthChain(neg)
 	require.NotNil(t, chain)
@@ -491,7 +491,7 @@ func (fx *e2eFixture) testMultiMethodPrefersNegotiate(t *testing.T) {
 	// should succeed; the instrumented Basic must NOT be invoked.
 	// This is the explicit "no fallthrough to Basic" assertion the
 	// previous version of this test only proved by elimination.
-	neg := newNegotiateAuthenticator(0)
+	neg := newNegotiateAuthenticator()
 	require.NotNil(t, neg)
 	basic := newInstrumentedBasic(basicUser + ":" + basicPassword)
 	chain := newAuthChain(neg, basic)
@@ -508,7 +508,7 @@ func (fx *e2eFixture) testFallsThroughOnTicketLoss(t *testing.T) {
 	// time and request time by overriding hasTicket to return false.
 	// applicableTo will then exclude Negotiate, picker falls through
 	// to Basic.
-	neg := newNegotiateAuthenticator(0)
+	neg := newNegotiateAuthenticator()
 	require.NotNil(t, neg)
 	negotiator, ok := neg.(*negotiateAuthenticator)
 	require.True(t, ok)
@@ -527,7 +527,7 @@ func (fx *e2eFixture) testRefusesBasicDowngrade(t *testing.T) {
 	// via hasTicket=false. The picker must yield zero candidates and
 	// the loop returns errNoMatchingAuthMethod, NOT silently send
 	// Basic credentials.
-	neg := newNegotiateAuthenticator(0)
+	neg := newNegotiateAuthenticator()
 	require.NotNil(t, neg)
 	negotiator, ok := neg.(*negotiateAuthenticator)
 	require.True(t, ok)
@@ -546,7 +546,7 @@ func (fx *e2eFixture) testProxyAuthAllowlistExclusion(t *testing.T) {
 	// hostAllowlist that does NOT match proxyHost. The chain-level
 	// allowlist must return zero candidates from pick(), uniformly
 	// across all auth methods.
-	neg := newNegotiateAuthenticator(0)
+	neg := newNegotiateAuthenticator()
 	require.NotNil(t, neg)
 
 	// Without a fallback method, the chain must error because the

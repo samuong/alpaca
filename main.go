@@ -61,8 +61,6 @@ func main() {
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
 	username := flag.String("u", whoAmI(), "username for proxy auth (NTLM)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
-	kerberosWait := flag.Int("w", 0,
-		"seconds to wait for a Kerberos ticket at startup (macOS only)")
 	noKerberos := flag.Bool("no-kerberos", false,
 		"disable Kerberos/Negotiate auto-detection (macOS only)")
 	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
@@ -139,19 +137,9 @@ func main() {
 	// signed in" case — alpaca behaves like the keyring source.
 	var methods []proxyAuthenticator
 	if !*noKerberos {
-		if neg := newNegotiateAuthenticator(*kerberosWait); neg != nil {
+		if neg := newNegotiateAuthenticator(); neg != nil {
 			log.Println("Kerberos/Negotiate authentication available")
 			methods = append(methods, neg)
-		} else if *kerberosWait > 0 {
-			// newNegotiateAuthenticator returns nil on platforms
-			// that don't have a Kerberos backend implemented
-			// (currently anything other than macOS). The user
-			// passed -w expecting Kerberos to wait, so warn that
-			// the flag is inert on this platform rather than
-			// silently failing the user's expectation.
-			log.Println("-w was specified but Kerberos/Negotiate " +
-				"is not available on this platform; the flag " +
-				"has no effect")
 		}
 	}
 	if a != nil {
