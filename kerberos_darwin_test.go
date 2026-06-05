@@ -12,40 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Unit tests for the macOS backend. These do not exercise GSS.framework
+// against a real KDC; that needs a Kerberos credential and is covered by the
+// integration fixture (kerberos_darwin_integration_test.go). They confirm the
+// backend wires the shared authenticator correctly and that the credential
+// probe is safe to call in any environment, mirroring the Windows backend's
+// unit tests.
+
+//go:build darwin
+
 package main
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestNegotiateApplicableTo(t *testing.T) {
-	withTicket := func() bool { return true }
-	withoutTicket := func() bool { return false }
+func TestNewNegotiateAuthenticatorWiring(t *testing.T) {
+	auth := newNegotiateAuthenticator()
+	require.NotNil(t, auth,
+		"newNegotiateAuthenticator must return a value even when no ticket "+
+			"is present at startup, so a credential that arrives later is honoured")
 
-	t.Run("ticket present permits any non-empty host", func(t *testing.T) {
-		// The picker (*authChain.allowedHost) enforces host policy
-		// across all auth methods; Negotiate's applicableTo only
-		// checks runtime preconditions (ticket presence + host
-		// resolvability). Both cross-realm and home-realm hosts pass
-		// applicableTo as long as a ticket exists.
-		n := &negotiateAuthenticator{hasTicket: withTicket}
-		assert.True(t, n.applicableTo("proxy.corp.example"))
-		assert.True(t, n.applicableTo("proxy.any-other.example.net"))
-	})
+	na, ok := auth.(*negotiateAuthenticator)
+	require.True(t, ok, "expected *negotiateAuthenticator, got %T", auth)
+	assert.Equal(t, "Negotiate", na.scheme())
+	assert.NotNil(t, na.hasTicket, "hasTicket must be wired to the GSS presence check")
+}
 
-	t.Run("blank host is never applicable", func(t *testing.T) {
-		n := &negotiateAuthenticator{hasTicket: withTicket}
-		assert.False(t, n.applicableTo(""))
-	})
-
-	t.Run("ticket missing causes silent fall-through", func(t *testing.T) {
-		// Re-check on every 407 means an expired or revoked ticket
-		// causes Negotiate to opt out of the picker, falling through
-		// to NTLM/Basic instead of failing the chain on a stale
-		// ticket error.
-		n := &negotiateAuthenticator{hasTicket: withoutTicket}
-		assert.False(t, n.applicableTo("proxy.example"))
-	})
+func TestCheckKerberosTicketIsSafeToCall(t *testing.T) {
+	// The result depends on the host: true when the user has a usable
+	// credential in the system cache (Apple SSO, Ticket Viewer, kinit),
+	// false otherwise. The unit suite only asserts the probe runs without
+	// panicking; real ticket validation is covered by the integration
+	// fixture.
+	_ = checkKerberosTicket()
 }

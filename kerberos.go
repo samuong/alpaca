@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !darwin
+//go:build !darwin && !windows
 
 package main
 
-// newNegotiateAuthenticator is a stub for non-macOS platforms. Kerberos
-// authentication via GSS.framework is only available on macOS.
+// newNegotiateAuthenticator is a stub for platforms without a Kerberos
+// backend. Kerberos/Negotiate is implemented on macOS (GSS.framework,
+// kerberos_darwin.go) and Windows (SSPI, kerberos_windows.go).
 func newNegotiateAuthenticator() proxyAuthenticator {
 	return nil
 }

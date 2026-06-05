@@ -3,6 +3,7 @@ module github.com/samuong/alpaca/v2
 go 1.25.0
 
 require (
+	github.com/alexbrainman/sspi v0.0.0-20250919150558-7d374ff0d59e
 	github.com/gobwas/glob v0.2.3
 	github.com/keybase/go-keychain v0.0.1
 	github.com/robertkrimen/otto v0.5.1

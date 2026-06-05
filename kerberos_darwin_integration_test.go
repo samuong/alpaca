@@ -12,25 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build e2e && darwin
+//go:build integration && darwin
 
-// End-to-end test fixture for alpaca's multi-method proxy authentication.
+// Integration test fixture for alpaca's multi-method proxy authentication
+// on macOS.
 //
-// Spins up a single container (testdata/kerberos-e2e/Dockerfile) running
-// MIT KDC + squid configured to advertise Negotiate, NTLM and Basic, then
-// exercises the full alpaca pipeline against it: PAC-less direct upstream,
-// the multi-auth chain, and the security invariants (downgrade refusal,
-// proxy-auth allowlist enforcement, ticket re-check).
+// Spins up a single container (testdata/kerberos-darwin-integration/Dockerfile)
+// running MIT KDC + squid configured to advertise Negotiate, NTLM and Basic,
+// then exercises the full alpaca pipeline against it: PAC-less direct
+// upstream, the multi-auth chain, and the security invariants (downgrade
+// refusal, proxy-auth allowlist enforcement, ticket re-check).
 //
-// Build tag is "e2e && darwin": the test exercises alpaca's macOS
-// GSS.framework Negotiate path, which is the only Kerberos backend
-// implemented in this PR. On other platforms newNegotiateAuthenticator
-// returns nil so there's nothing to exercise; the build constraint
-// keeps `go test -tags=e2e ./...` working transparently elsewhere.
+// Build tag is "integration && darwin": the test exercises alpaca's macOS
+// GSS.framework Negotiate path. The Windows SSPI backend has its own
+// integration test (integration && windows); the build constraint keeps
+// `go test -tags=integration ./...` selecting the right one per platform.
 //
 // Run with:
 //
-//   CGO_ENABLED=1 go test -tags=e2e -run TestKerberosE2E -v .
+//   CGO_ENABLED=1 go test -tags=integration -run TestKerberosDarwinIntegration -v .
 //
 // Prerequisites on the host:
 //   - docker on PATH (Podman should also work via the docker shim)
@@ -62,8 +62,8 @@ import (
 )
 
 const (
-	imageTag      = "alpaca-kerberos-e2e:dev"
-	containerName = "alpaca-kerberos-e2e"
+	imageTag      = "alpaca-kerberos-darwin-integration:dev"
+	containerName = "alpaca-kerberos-darwin-integration"
 	// All identifiers below are deliberately fictitious. EXAMPLE.TEST
 	// and *.example.test are reserved for testing per RFC 6761; the
 	// principals and passwords are baked into the test fixture and
@@ -76,16 +76,16 @@ const (
 	basicUser     = "bob"
 	basicPassword = "bobpw"
 	// upstreamBody is what the in-container Python http.server returns
-	// for /. Asserted by every successful e2e sub-test so that a squid
+	// for /. Asserted by every successful integration sub-test so that a squid
 	// misconfiguration returning its own 200 page would not silently
 	// pass.
 	upstreamBody = "ok\n"
 )
 
-// e2eFixture wraps a running test container and exposes the host-side
+// integrationFixture wraps a running test container and exposes the host-side
 // ports that the test needs to dial. It also remembers the temporary
 // krb5.conf and credential cache so they're cleaned up on teardown.
-type e2eFixture struct {
+type integrationFixture struct {
 	t             *testing.T
 	dockerBin     string
 	proxyHostPort string // e.g. 127.0.0.1:53128
@@ -96,7 +96,7 @@ type e2eFixture struct {
 	credCachePath string
 }
 
-func TestKerberosE2E(t *testing.T) {
+func TestKerberosDarwinIntegration(t *testing.T) {
 	fx := setupFixture(t)
 	defer fx.teardown()
 
@@ -109,7 +109,7 @@ func TestKerberosE2E(t *testing.T) {
 	t.Run("Falls through to Basic when Negotiate ticket is gone", fx.testFallsThroughOnTicketLoss)
 	t.Run("Refuses Basic when only NTLM/Negotiate configured against Basic-only proxy", fx.testRefusesBasicDowngrade)
 	t.Run("proxy-auth allowlist excludes proxy", fx.testProxyAuthAllowlistExclusion)
-	// Note: there is no e2e sub-test for NTLM because squid's only
+	// Note: there is no integration sub-test for NTLM because squid's only
 	// container-friendly NTLM helper (ntlm_fake_auth) emits Type-2
 	// challenges that go-ntlmssp's strict parser rejects, and a real
 	// NTLM helper requires a Windows DC. NTLM iteration through the
@@ -122,13 +122,13 @@ func TestKerberosE2E(t *testing.T) {
 // Fixture lifecycle
 // ---------------------------------------------------------------------
 
-func setupFixture(t *testing.T) *e2eFixture {
+func setupFixture(t *testing.T) *integrationFixture {
 	t.Helper()
 
 	docker := findDocker(t)
 	requireBinary(t, "kinit")
 
-	fx := &e2eFixture{
+	fx := &integrationFixture{
 		t:         t,
 		dockerBin: docker,
 		// The container bootstrap script starts a Python http.server
@@ -158,20 +158,20 @@ func findDocker(t *testing.T) string {
 			return path
 		}
 	}
-	t.Skip("e2e: neither docker nor podman found on PATH")
+	t.Skip("integration: neither docker nor podman found on PATH")
 	return ""
 }
 
 func requireBinary(t *testing.T, name string) {
 	t.Helper()
 	if _, err := exec.LookPath(name); err != nil {
-		t.Skipf("e2e: %s not found on PATH (skipping; install krb5-user / Heimdal)", name)
+		t.Skipf("integration: %s not found on PATH (skipping; install krb5-user / Heimdal)", name)
 	}
 }
 
-func (fx *e2eFixture) buildImage(t *testing.T) {
+func (fx *integrationFixture) buildImage(t *testing.T) {
 	t.Helper()
-	dir, err := filepath.Abs("testdata/kerberos-e2e")
+	dir, err := filepath.Abs("testdata/kerberos-darwin-integration")
 	require.NoError(t, err)
 
 	args := []string{"build", "-t", imageTag}
@@ -190,15 +190,15 @@ func (fx *e2eFixture) buildImage(t *testing.T) {
 	}
 	args = append(args, dir)
 
-	t.Logf("e2e: building image %s (this may take a few minutes the first time)", imageTag)
+	t.Logf("integration: building image %s (this may take a few minutes the first time)", imageTag)
 	cmd := exec.Command(fx.dockerBin, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Skipf("e2e: docker build failed (skipping; ensure docker daemon is reachable):\n%s", output)
+		t.Skipf("integration: docker build failed (skipping; ensure docker daemon is reachable):\n%s", output)
 	}
 }
 
-func (fx *e2eFixture) runContainer(t *testing.T) {
+func (fx *integrationFixture) runContainer(t *testing.T) {
 	t.Helper()
 	// Tear down any leftover container from a previous run.
 	_ = exec.Command(fx.dockerBin, "rm", "-f", containerName).Run()
@@ -235,11 +235,11 @@ func (fx *e2eFixture) runContainer(t *testing.T) {
 	// Read back the dynamic ports.
 	fx.proxyHostPort = fx.dockerPort("3128/tcp")
 	fx.kdcHostPort = fx.dockerPort("88/tcp")
-	t.Logf("e2e: container started; squid=%s, kdc=%s",
+	t.Logf("integration: container started; squid=%s, kdc=%s",
 		fx.proxyHostPort, fx.kdcHostPort)
 }
 
-func (fx *e2eFixture) dockerPort(internal string) string {
+func (fx *integrationFixture) dockerPort(internal string) string {
 	out, err := exec.Command(fx.dockerBin, "port", containerName, internal).Output()
 	require.NoErrorf(fx.t, err, "docker port %s failed", internal)
 	// Output looks like "127.0.0.1:53128"
@@ -253,7 +253,7 @@ func (fx *e2eFixture) dockerPort(internal string) string {
 	return ""
 }
 
-func (fx *e2eFixture) waitForSquid(t *testing.T) {
+func (fx *integrationFixture) waitForSquid(t *testing.T) {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
@@ -276,15 +276,15 @@ func (fx *e2eFixture) waitForSquid(t *testing.T) {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatal("e2e: squid did not respond with 407 within 60s; container logs follow:\n" + fx.containerLogs())
+	t.Fatal("integration: squid did not respond with 407 within 60s; container logs follow:\n" + fx.containerLogs())
 }
 
-func (fx *e2eFixture) containerLogs() string {
+func (fx *integrationFixture) containerLogs() string {
 	out, _ := exec.Command(fx.dockerBin, "logs", containerName).CombinedOutput()
 	return string(out)
 }
 
-func (fx *e2eFixture) kinit(t *testing.T) {
+func (fx *integrationFixture) kinit(t *testing.T) {
 	t.Helper()
 
 	// Build a krb5.conf that tells kinit to reach the KDC on the
@@ -350,10 +350,10 @@ func (fx *e2eFixture) kinit(t *testing.T) {
 	require.NoErrorf(t, err, "klist failed after kinit:\n%s", output)
 	require.Contains(t, string(output), realm,
 		"klist did not show a ticket for %s", realm)
-	t.Logf("e2e: kinit ok\n%s", strings.TrimSpace(string(output)))
+	t.Logf("integration: kinit ok\n%s", strings.TrimSpace(string(output)))
 }
 
-func (fx *e2eFixture) teardown() {
+func (fx *integrationFixture) teardown() {
 	if fx.dockerBin != "" {
 		_ = exec.Command(fx.dockerBin, "rm", "-f", containerName).Run()
 	}
@@ -361,7 +361,7 @@ func (fx *e2eFixture) teardown() {
 }
 
 // ---------------------------------------------------------------------
-// Test helpers — drive alpaca against the fixture
+// Test helpers: drive alpaca against the fixture
 // ---------------------------------------------------------------------
 
 // proxyURL returns the URL alpaca should treat as the upstream proxy.
@@ -369,7 +369,7 @@ func (fx *e2eFixture) teardown() {
 // (HTTP/proxy.example.test), so we use proxy.example.test in the URL
 // and rely on a custom DialContext to actually connect to the host
 // port that docker exposed.
-func (fx *e2eFixture) proxyURL() *url.URL {
+func (fx *integrationFixture) proxyURL() *url.URL {
 	host, port, _ := net.SplitHostPort(fx.proxyHostPort)
 	_ = host
 	return &url.URL{Scheme: "http", Host: net.JoinHostPort(proxyHost, port)}
@@ -378,7 +378,7 @@ func (fx *e2eFixture) proxyURL() *url.URL {
 // dialer returns a net.Dialer-style function that rewrites
 // proxy.example.test:N to 127.0.0.1:N so the SPN-bearing hostname
 // reaches the actual container port.
-func (fx *e2eFixture) dialer() func(ctx context.Context, network, addr string) (net.Conn, error) {
+func (fx *integrationFixture) dialer() func(ctx context.Context, network, addr string) (net.Conn, error) {
 	hostPort := fx.proxyHostPort
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if strings.HasPrefix(addr, proxyHost+":") {
@@ -393,7 +393,7 @@ func (fx *e2eFixture) dialer() func(ctx context.Context, network, addr string) (
 // through the given alpaca chain by invoking the chain helpers
 // directly. It mirrors what ProxyHandler does without needing to spin
 // up the full middleware stack.
-func (fx *e2eFixture) transportThroughAlpaca(chain *authChain) http.RoundTripper {
+func (fx *integrationFixture) transportThroughAlpaca(chain *authChain) http.RoundTripper {
 	return &alpacaTestRT{
 		fx:    fx,
 		chain: chain,
@@ -401,7 +401,7 @@ func (fx *e2eFixture) transportThroughAlpaca(chain *authChain) http.RoundTripper
 }
 
 type alpacaTestRT struct {
-	fx    *e2eFixture
+	fx    *integrationFixture
 	chain *authChain
 }
 
@@ -465,7 +465,7 @@ func newInstrumentedBasic(creds string) *instrumentedBasic {
 	return &instrumentedBasic{basicAuthenticator: newBasicAuthenticator(creds)}
 }
 
-func (fx *e2eFixture) testNegotiateSucceeds(t *testing.T) {
+func (fx *integrationFixture) testNegotiateSucceeds(t *testing.T) {
 	neg := newNegotiateAuthenticator()
 	require.NotNil(t, neg, "expected newNegotiateAuthenticator to find the kinit'd ticket")
 	chain := newAuthChain(neg)
@@ -476,7 +476,7 @@ func (fx *e2eFixture) testNegotiateSucceeds(t *testing.T) {
 	assertSuccessful200(t, resp)
 }
 
-func (fx *e2eFixture) testBasicSucceeds(t *testing.T) {
+func (fx *integrationFixture) testBasicSucceeds(t *testing.T) {
 	basic := newBasicAuthenticator(basicUser + ":" + basicPassword)
 	chain := newAuthChain(basic)
 	require.NotNil(t, chain)
@@ -486,7 +486,7 @@ func (fx *e2eFixture) testBasicSucceeds(t *testing.T) {
 	assertSuccessful200(t, resp)
 }
 
-func (fx *e2eFixture) testMultiMethodPrefersNegotiate(t *testing.T) {
+func (fx *integrationFixture) testMultiMethodPrefersNegotiate(t *testing.T) {
 	// All methods configured. Negotiate should be tried first and
 	// should succeed; the instrumented Basic must NOT be invoked.
 	// This is the explicit "no fallthrough to Basic" assertion the
@@ -503,7 +503,7 @@ func (fx *e2eFixture) testMultiMethodPrefersNegotiate(t *testing.T) {
 		"Basic must not be invoked when Negotiate succeeded first")
 }
 
-func (fx *e2eFixture) testFallsThroughOnTicketLoss(t *testing.T) {
+func (fx *integrationFixture) testFallsThroughOnTicketLoss(t *testing.T) {
 	// Build a chain whose Negotiate "loses" its ticket between picker
 	// time and request time by overriding hasTicket to return false.
 	// applicableTo will then exclude Negotiate, picker falls through
@@ -522,7 +522,7 @@ func (fx *e2eFixture) testFallsThroughOnTicketLoss(t *testing.T) {
 	assertSuccessful200(t, resp)
 }
 
-func (fx *e2eFixture) testRefusesBasicDowngrade(t *testing.T) {
+func (fx *integrationFixture) testRefusesBasicDowngrade(t *testing.T) {
 	// Configure ONLY Negotiate, then deliberately ineligible-ate it
 	// via hasTicket=false. The picker must yield zero candidates and
 	// the loop returns errNoMatchingAuthMethod, NOT silently send
@@ -542,7 +542,7 @@ func (fx *e2eFixture) testRefusesBasicDowngrade(t *testing.T) {
 	assert.ErrorIs(t, err, errNoMatchingAuthMethod)
 }
 
-func (fx *e2eFixture) testProxyAuthAllowlistExclusion(t *testing.T) {
+func (fx *integrationFixture) testProxyAuthAllowlistExclusion(t *testing.T) {
 	// hostAllowlist that does NOT match proxyHost. The chain-level
 	// allowlist must return zero candidates from pick(), uniformly
 	// across all auth methods.
@@ -577,7 +577,7 @@ func (fx *e2eFixture) testProxyAuthAllowlistExclusion(t *testing.T) {
 }
 
 // assertSuccessful200 verifies that resp is a 200 from the in-container
-// upstream test server (body equals upstreamBody) — not, say, squid's own
+// upstream test server (body equals upstreamBody), not squid's own
 // 200-shaped error page. Closes the body when done.
 func assertSuccessful200(t *testing.T, resp *http.Response) {
 	t.Helper()
@@ -592,8 +592,8 @@ func assertSuccessful200(t *testing.T, resp *http.Response) {
 // mustReq builds a fresh request to the upstream test server. Squid
 // will forward this once authentication succeeds; a 200 with body
 // `upstreamBody` from the in-container HTTP server is what proves the
-// auth chain worked end-to-end.
-func mustReq(t *testing.T, fx *e2eFixture) *http.Request {
+// auth chain worked against the real proxy.
+func mustReq(t *testing.T, fx *integrationFixture) *http.Request {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, fx.upstreamURL, nil)
 	require.NoError(t, err)

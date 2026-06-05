@@ -6,7 +6,8 @@
 
 Alpaca is a local HTTP proxy for command-line tools. It supports proxy
 auto-configuration (PAC) files, NTLM authentication, HTTP Basic
-authentication, and (on macOS) Kerberos/Negotiate (SPNEGO) authentication.
+authentication, and Kerberos/Negotiate (SPNEGO) authentication on macOS (and,
+experimentally, Windows).
 ![alt text](assets/alpaca-banner.png)
 
 ## Install using Homebrew
@@ -61,12 +62,15 @@ If the proxy server requires valid authentication credentials, you can provide t
 
 - HTTP Basic authentication, if `BASIC_CREDENTIALS=login:password` is set in
   the environment;
-- Kerberos / Negotiate, **automatically on macOS** when a ticket from Apple SSO
-  / Ticket Viewer / `kinit` is available — no flag required (pass
-  `--no-kerberos` to opt out). Tickets that arrive *after* alpaca starts are
-  picked up automatically: alpaca re-checks credential availability on every
-  407 response, so a user who launches alpaca before signing in to Apple SSO
-  does not need to restart it once the ticket lands;
+- Kerberos / Negotiate, **automatically on macOS** (and, **experimentally**, on
+  **Windows**) when a ticket is available, with no flag required (pass
+  `--no-kerberos` to opt out). macOS reads the
+  system credential cache via `GSS.framework` (populated by Apple SSO, Ticket
+  Viewer, or `kinit`); Windows reads the logon session's credential via SSPI.
+  Tickets that arrive *after* alpaca starts are picked up automatically: alpaca
+  re-checks credential availability on every 407 response, so a user who
+  launches alpaca before signing in does not need to restart it once the ticket
+  lands;
 - NTLM via the shell prompt, if `-d` is passed;
 - NTLM via the shell environment, if `NTLM_CREDENTIALS` is set;
 - the system keyring (macOS, Windows and Linux/GNOME supported), if none of
@@ -187,24 +191,35 @@ When auth misbehaves, the first thing to check is alpaca's own log:
 
 ### Platform support for Kerberos
 
-Kerberos / Negotiate authentication in this build is **macOS only**. It uses
-Apple's `GSS.framework` to consume the system Kerberos credential cache —
-the same one populated by Apple SSO, Ticket Viewer, and `kinit` — so no
-extra configuration is required when a ticket is already present.
+Kerberos / Negotiate authentication is available on **macOS and Windows**:
 
-Windows and Linux Kerberos handling is intentionally out of scope for this
-change; on those platforms `newNegotiateAuthenticator` returns `nil` and
-Negotiate is transparently absent from the auth chain. Adding support on
-either platform is a follow-up:
+- **macOS** uses Apple's `GSS.framework` to consume the system Kerberos
+  credential cache (the same one populated by Apple SSO, Ticket Viewer, and
+  `kinit`), and requests the service principal in the GSS host-based form
+  `HTTP@proxyhost`.
+- **Windows** *(experimental)* uses SSPI's `Negotiate` package (via
+  `github.com/alexbrainman/sspi`) to consume the logon session's Kerberos
+  credential, and requests the service principal in the SPN form
+  `HTTP/proxyhost` that Active Directory registers. No cgo is required on
+  Windows.
 
-- **Windows** has system-wide Kerberos via SSPI (`Negotiate` package) and
-  could be implemented either via cgo against `security.h` or in pure Go
-  via `github.com/alexbrainman/sspi`.
-- **Linux** has no system-wide credential store but `github.com/jcmturner/gokrb5`
-  can read the per-user `krb5cc_$UID` cache produced by `kinit`.
+> **Windows Kerberos support is experimental.** It has been validated
+> end-to-end against a reference environment (a Windows 11 24H2 client joined
+> to a Samba Active Directory domain, authenticating through a
+> Negotiate-advertising Squid), but has not yet seen broad testing against
+> production Active Directory and a range of proxies. Please report any issues
+> you hit.
 
-Both are clean drop-in additions next to `kerberos_darwin.go`, sharing
-the same `proxyAuthenticator` interface.
+Both backends share one `negotiateAuthenticator` (in `kerberos_common.go`):
+they differ only in the two platform calls, checking credential presence and
+generating the SPNEGO token. Negotiate spans both Kerberos and NTLM per
+RFC 4559; alpaca requests a single initiator token and lets the proxy validate
+it, with no mutual-authentication round trips.
+
+**Linux** has no system-wide credential store, so Negotiate is transparently
+absent there (`newNegotiateAuthenticator` returns `nil`). Adding it is a
+follow-up: `github.com/jcmturner/gokrb5` can read the per-user `krb5cc_$UID`
+cache produced by `kinit`, as a clean drop-in next to the existing backends.
 
 ### Shell Prompt
 
@@ -270,7 +285,7 @@ can set this manually using the `-C` flag.
 | `-d` | (none) | Domain of the proxy account (for NTLM auth) |
 | `-u` | current user | Username for proxy auth (NTLM) |
 | `-H` | `false` | Print hashed NTLM credentials and exit |
-| `-no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS only) |
+| `-no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS and Windows) |
 | `-enable-socks` | `false` | Allow SOCKS5 proxies from PAC files. SOCKS5 has its own auth model and bypasses alpaca's HTTP authentication chain (and therefore the proxy-auth allowlist). |
 | `-q` | `false` | Quiet mode, suppress all log output. Also suppresses the proxy-auth-allowlist startup nudge. |
 | `-version` | `false` | Print version and exit |

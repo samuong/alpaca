@@ -4,3 +4,6 @@
 __debug_bin*
 .idea
 .DS_Store
+
+# OpenSpec slash-command tooling (regenerate with `openspec init`); not tracked
+.opencode/

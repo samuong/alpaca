@@ -1,15 +1,15 @@
-# Kerberos end-to-end test fixture
+# Kerberos integration test fixture (macOS)
 
-This directory contains the Docker fixture that backs `kerberos_integration_test.go`.
+This directory contains the Docker fixture that backs `kerberos_darwin_integration_test.go`.
 It is intentionally separate from the standard test suite because it requires
 Docker (or Podman with a running machine) and takes ~30s on first run.
 
-**Platform scope:** the test is gated on `//go:build e2e && darwin` because it
-exercises alpaca's macOS GSS.framework Negotiate path. The Linux/Windows
-Kerberos backends are not implemented in the same PR and would need their
-own host-side test rigs (a domain-joined Windows VM for SSPI, or `gokrb5`
-hooked into a krb5cc fixture for Linux); the Docker container itself is
-just a stable KDC + squid for the host's Kerberos client to talk to.
+**Platform scope:** the test is gated on `//go:build integration && darwin`
+because it exercises alpaca's macOS GSS.framework Negotiate path. The Windows
+SSPI backend has its own integration test (`integration && windows`) with its
+own host-side rig (a domain-joined Windows host against an Active Directory
+realm); Linux has no system Kerberos backend yet. The Docker container here is
+just a stable KDC + squid for the macOS host's Kerberos client to talk to.
 
 ## What it does
 
@@ -17,11 +17,11 @@ The Dockerfile builds a single image that runs:
 
 - **MIT Kerberos KDC** (`krb5-kdc` + `krb5-admin-server`) for the realm
   `EXAMPLE.TEST`, with three principals:
-  - `alice@EXAMPLE.TEST` — the test "user" the host's `kinit` obtains a
+  - `alice@EXAMPLE.TEST` is the test "user" the host's `kinit` obtains a
     TGT for.
-  - `HTTP/proxy.example.test@EXAMPLE.TEST` — squid's service principal,
+  - `HTTP/proxy.example.test@EXAMPLE.TEST` is squid's service principal,
     kept in `/etc/squid/HTTP.keytab`.
-  - `admin/admin@EXAMPLE.TEST` — kadmin master, used by the bootstrap
+  - `admin/admin@EXAMPLE.TEST` is the kadmin master, used by the bootstrap
     script.
 - **Squid** configured to advertise `Negotiate, NTLM, Basic`, with:
   - `negotiate_kerberos_auth` helper backed by the keytab above.
@@ -37,7 +37,7 @@ The Dockerfile builds a single image that runs:
 ## Running the test
 
 ```sh
-CGO_ENABLED=1 go test -tags=e2e -run TestKerberosE2E -v .
+CGO_ENABLED=1 go test -tags=integration -run TestKerberosDarwinIntegration -v .
 ```
 
 The test:
@@ -67,7 +67,7 @@ The test calls `t.Skip()` rather than `t.Fatal()` when:
 - `kinit` (Heimdal/MIT) is not on `PATH`.
 - `docker build` fails (e.g. daemon not running).
 
-This keeps the e2e test invisible to anyone who doesn't have the
+This keeps the integration test invisible to anyone who doesn't have the
 infrastructure for it, while letting a developer who does run it as
 part of their normal pre-PR validation.
 
@@ -82,7 +82,7 @@ egress proxy at `localhost:3128`, the test will use it automatically.
 
 ## Test credentials
 
-These are baked into the image and are NOT secrets — every runner gets
+These are baked into the image and are NOT secrets - every runner gets
 the same passwords, and the image only ever runs inside the test
 fixture's network namespace.
 

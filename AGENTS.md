@@ -1,4 +1,6 @@
-# CLAUDE.md — Alpaca
+# AGENTS.md - Alpaca
+
+This is the contributor and AI-agent guide for Alpaca. It applies to any coding assistant or harness, not a specific tool.
 
 ## Project Overview
 
@@ -7,7 +9,7 @@ Alpaca is a local HTTP proxy for command-line tools written in Go. It supports:
 - Proxy Auto-Configuration (PAC) files
 - NTLM authentication
 - Basic HTTP authentication
-- Kerberos/Negotiate authentication (macOS only)
+- Kerberos/Negotiate authentication (macOS via GSS.framework, Windows via SSPI)
 - System keyring integration (macOS, Windows, Linux/GNOME)
 - Automatic network switching (bypasses unreachable proxies)
 
@@ -43,7 +45,10 @@ alpaca/
 ├── authenticator.go       # NTLM authentication
 ├── basicauth.go           # Basic HTTP proxy authentication
 ├── multiauth.go           # authChain: picks authenticators for a 407 response
-├── kerberos*.go           # Kerberos/Negotiate auth (macOS-specific)
+├── kerberos_common.go     # Shared Negotiate authenticator (darwin || windows)
+├── kerberos_darwin.go     # macOS Kerberos backend (GSS.framework, cgo)
+├── kerberos_windows.go    # Windows Kerberos backend (SSPI)
+├── kerberos.go            # Stub for platforms without a Kerberos backend
 ├── credentials.go         # Credential sourcing (terminal, env, keyring)
 ├── keyring*.go            # System keyring integration per platform
 ├── pacfinder*.go          # PAC URL discovery (platform-specific)
@@ -65,10 +70,10 @@ alpaca/
 
 Requests flow through a middleware chain built in `main.go:createServer`:
 
-1. **AddContextID** — assigns a unique ID to each request via context
-2. **ProxyFinder.WrapHandler** — discovers upstream proxy via PAC evaluation
-3. **ProxyHandler.WrapHandler** — routes proxy requests (CONNECT or absolute-form URIs); non-proxy requests pass through to the mux
-4. **RequestLogger** — logs all requests and responses
+1. **AddContextID** - assigns a unique ID to each request via context
+2. **ProxyFinder.WrapHandler** - discovers upstream proxy via PAC evaluation
+3. **ProxyHandler.WrapHandler** - routes proxy requests (CONNECT or absolute-form URIs); non-proxy requests pass through to the mux
+4. **RequestLogger** - logs all requests and responses
 
 ### Authentication Chain
 
@@ -89,7 +94,7 @@ connection-lifecycle invariants:
   Type 1 → Type 3 sequence within a single method.
 - The header `Proxy-Authorization` is cleared between attempts.
 - Any error returned by a method aborts the chain (this is the
-  abort-on-error invariant — see test `TestRetryProxyRequest_AbortsChainOnError`).
+  abort-on-error invariant - see test `TestRetryProxyRequest_AbortsChainOnError`).
 
 Negotiate availability is re-checked per-407 via `applicableTo()` rather
 than at startup, so a Kerberos ticket that arrives after alpaca starts
@@ -107,10 +112,10 @@ applicability rules.
 
 ### Key Interfaces
 
-- `proxyAuthenticator` (in `proxy.go`) — implemented by `authenticator`
+- `proxyAuthenticator` (in `proxy.go`) - implemented by `authenticator`
   (NTLM), `basicAuthenticator`, and `negotiateAuthenticator`. Methods:
   `do(req, rt) (resp, err)`, `scheme()`, `applicableTo(host)`.
-- `*authChain` (in `multiauth.go`) — picks the ordered list of
+- `*authChain` (in `multiauth.go`) - picks the ordered list of
   authenticators to try given the schemes the proxy advertised. NOT a
   `proxyAuthenticator` itself.
 
@@ -158,7 +163,7 @@ Both are enforced in CI.
 
 ### Style
 
-- **100-character line limit** — enforced in CI
+- **100-character line limit** - enforced in CI
 - **Formatting:** `goimports` (not just `gofmt`)
 - **Linting:** `golangci-lint`
 - Follow [Effective Go](https://go.dev/doc/effective_go) patterns
@@ -172,7 +177,7 @@ Both are enforced in CI.
 ### Testing
 
 - Use **table-driven tests** where applicable
-- Use `assert` and `require` from [testify](https://github.com/stretchr/testify) — not bare `if` checks
+- Use `assert` and `require` from [testify](https://github.com/stretchr/testify) - not bare `if` checks
 - Use `httptest.NewServer()` / `httptest.NewTLSServer()` for integration tests
 - Every major component should have test coverage
 
@@ -180,7 +185,7 @@ Both are enforced in CI.
 
 - Write clear, descriptive commit messages in plain English
 - **Do not** use Conventional Commits prefixes (no `feat:`, `fix:`, `chore:`, etc.)
-- Keep commits small and atomic — do not mix refactors with feature work
+- Keep commits small and atomic - do not mix refactors with feature work
 
 ## CI/CD
 
@@ -215,7 +220,7 @@ Triggered on tags matching `v*`. Creates a GitHub release and uploads platform-s
 
 Files with platform build tags:
 
-- `*_darwin.go` — macOS-specific (Keychain, Kerberos, PAC via SCDynamicStore)
-- `*_unix.go` — Unix/Linux-specific (PAC discovery)
-- `*_windows.go` — Windows-specific (PAC discovery, credential management)
-- `*_other.go` — Fallback stubs for unsupported platforms
+- `*_darwin.go` - macOS-specific (Keychain, Kerberos, PAC via SCDynamicStore)
+- `*_unix.go` - Unix/Linux-specific (PAC discovery)
+- `*_windows.go` - Windows-specific (PAC discovery, credential management)
+- `*_other.go` - Fallback stubs for unsupported platforms
