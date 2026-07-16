@@ -21,11 +21,35 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const contextKeyProxy = contextKey("proxy")
+
+// gracePeriod is the duration after a network change during which blockProxy()
+// calls are suppressed. This prevents the race where concurrent requests fail
+// (because the network is not yet fully stable) and immediately re-block the
+// proxy that was just unblocked by checkForUpdates().
+//
+// Configurable via ALPACA_GRACE_PERIOD (seconds). Set to 0 to disable.
+// Default: 0 (disabled).
+var gracePeriod = getGracePeriod()
+
+func getGracePeriod() time.Duration {
+	if val := os.Getenv("ALPACA_GRACE_PERIOD"); val != "" {
+		if secs, err := strconv.Atoi(val); err == nil {
+			if secs <= 0 {
+				return 0
+			}
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return 0
+}
 
 func getProxyFromContext(req *http.Request) (*url.URL, error) {
 	if value := req.Context().Value(contextKeyProxy); value != nil {
@@ -41,11 +65,17 @@ type ProxyFinder struct {
 	wrapper     *PACWrapper
 	blocked     *blocklist
 	enableSocks bool
+	// graceUntil suppresses blockProxy() calls for a short period after a
+	// network change is detected. This prevents the race where a concurrent
+	// request fails (because the network is not yet fully stable) and
+	// immediately re-blocks the proxy that checkForUpdates() just unblocked.
+	graceUntil time.Time
+	now        func() time.Time
 	sync.Mutex
 }
 
 func NewProxyFinder(pacurl string, wrapper *PACWrapper, enableSocks bool) *ProxyFinder {
-	pf := &ProxyFinder{wrapper: wrapper, blocked: newBlocklist(), enableSocks: enableSocks}
+	pf := &ProxyFinder{wrapper: wrapper, blocked: newBlocklist(), enableSocks: enableSocks, now: time.Now}
 	pf.runner = new(PACRunner)
 	pf.fetcher = newPACFetcher(pacurl)
 	pf.checkForUpdates()
@@ -76,11 +106,13 @@ func (pf *ProxyFinder) checkForUpdates() {
 	if pacjs == nil {
 		if !pf.fetcher.isConnected() {
 			pf.blocked = newBlocklist()
+			pf.graceUntil = pf.now().Add(gracePeriod)
 			pf.wrapper.Wrap(nil)
 		}
 		return
 	}
 	pf.blocked = newBlocklist()
+	pf.graceUntil = pf.now().Add(gracePeriod)
 	if err := pf.runner.Update(pacjs); err != nil {
 		log.Printf("Error running PAC JS: %q", err)
 	} else {
@@ -156,5 +188,14 @@ func (pf *ProxyFinder) findProxyForRequest(req *http.Request) (*url.URL, error) 
 }
 
 func (pf *ProxyFinder) blockProxy(proxy string) {
+	if gracePeriod > 0 {
+		pf.Lock()
+		inGracePeriod := pf.now().Before(pf.graceUntil)
+		pf.Unlock()
+		if inGracePeriod {
+			log.Printf("Suppressing block of proxy %q (grace period after network change)", proxy)
+			return
+		}
+	}
 	pf.blocked.add(proxy)
 }

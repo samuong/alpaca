@@ -184,6 +184,13 @@ When auth misbehaves, the first thing to check is alpaca's own log:
   excluded by the host allowlist, or didn't match the proxy's
   advertised schemes. The client sees a 502; this line tells you which
   proxy and that the chain ran out of options.
+- `Suppressing block of proxy "…" (grace period after network change)` —
+  alpaca detected a network change and is temporarily ignoring proxy
+  failures to let the network stabilize. This is normal and resolves
+  within a few seconds. If the proxy remains unreachable after the grace
+  period, it will be blocked as usual and alpaca falls back to DIRECT.
+  Adjust the grace period via `ALPACA_GRACE_PERIOD` (seconds, default 0 /
+  disabled, set to e.g. 3 to enable).
 
 ### Platform support for Kerberos
 
@@ -283,6 +290,7 @@ can set this manually using the `-C` flag.
 | `BASIC_CREDENTIALS`           | `login:password` for HTTP Basic proxy auth |
 | `ALPACA_PROXY_AUTH_ALLOWLIST` | Comma-separated DNS suffixes that may receive proxy credentials. Applies uniformly to Basic, NTLM, and Negotiate. Default is permissive (any host); set to `*` for the explicit permissive form. See "Restricting where Alpaca sends credentials" above. |
 | `NTLM_USERNAME` / `NTLM_DOMAIN` | Used by the keyring credential source (Linux/GNOME, Windows) |
+| `ALPACA_GRACE_PERIOD`          | Seconds to suppress proxy-blocking after a network change is detected. Prevents a race where concurrent requests re-block the proxy before the network is fully stable. Default: `0` (disabled). Set to e.g. `3` to enable. |
 
 ---
 

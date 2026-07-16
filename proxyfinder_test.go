@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,4 +107,48 @@ func TestSkipBadProxies(t *testing.T) {
 	proxy, err = pf.findProxyForRequest(req)
 	require.NoError(t, err)
 	assert.Equal(t, "primary:80", proxy.Host)
+}
+
+func TestBlockProxySuppressedDuringGracePeriod(t *testing.T) {
+	// Enable grace period for this test (default is 0/disabled).
+	oldGracePeriod := gracePeriod
+	gracePeriod = 5 * time.Second
+	defer func() { gracePeriod = oldGracePeriod }()
+
+	js := `function FindProxyForURL(url, host) { return "PROXY proxy.test:80; DIRECT" }`
+	server := httptest.NewServer(http.HandlerFunc(pacjsHandler(js)))
+	defer server.Close()
+	pw := NewPACWrapper(PACData{Port: 1})
+	pf := NewProxyFinder(server.URL, pw, false)
+
+	req := httptest.NewRequest(http.MethodGet, "https://www.test", nil)
+	ctx := context.WithValue(req.Context(), contextKeyID, 0)
+	req = req.WithContext(ctx)
+
+	// Simulate a network change: checkForUpdates resets the blocklist and sets graceUntil.
+	// The grace period is already active from NewProxyFinder calling checkForUpdates().
+	// Verify that blockProxy is suppressed during the grace period.
+	pf.blockProxy("proxy.test:80")
+	assert.False(t, pf.blocked.contains("proxy.test:80"),
+		"blockProxy should be suppressed during grace period")
+
+	// Proxy should still be returned (not blocked).
+	proxy, err := pf.findProxyForRequest(req)
+	require.NoError(t, err)
+	require.NotNil(t, proxy)
+	assert.Equal(t, "proxy.test:80", proxy.Host)
+
+	// After grace period expires, blockProxy should work again.
+	pf.Lock()
+	pf.graceUntil = pf.now().Add(-1 * time.Second) // expire the grace period
+	pf.Unlock()
+
+	pf.blockProxy("proxy.test:80")
+	assert.True(t, pf.blocked.contains("proxy.test:80"),
+		"blockProxy should work after grace period expires")
+
+	// Proxy should now be skipped (blocked), falling through to DIRECT.
+	proxy, err = pf.findProxyForRequest(req)
+	require.NoError(t, err)
+	assert.Nil(t, proxy) // DIRECT
 }
