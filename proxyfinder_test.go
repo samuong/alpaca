@@ -53,7 +53,7 @@ func TestFindProxyForRequest(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(pacjsHandler(js)))
 			defer server.Close()
 			pw := NewPACWrapper(PACData{Port: 1})
-			pf := NewProxyFinder(server.URL, pw, test.enableSocks)
+			pf := NewProxyFinder(server.URL, pw, test.enableSocks, nil)
 			req := httptest.NewRequest(http.MethodGet, "https://www.test", nil)
 			ctx := context.WithValue(req.Context(), contextKeyID, i)
 			req = req.WithContext(ctx)
@@ -76,7 +76,7 @@ func TestFindProxyForRequest(t *testing.T) {
 func TestFallbackToDirectWhenNotConnected(t *testing.T) {
 	url := "http://pacserver.invalid/nonexistent.pac"
 	pw := NewPACWrapper(PACData{Port: 1})
-	pf := NewProxyFinder(url, pw, false)
+	pf := NewProxyFinder(url, pw, false, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://www.test", nil)
 	proxy, err := pf.findProxyForRequest(req)
 	require.NoError(t, err)
@@ -86,12 +86,29 @@ func TestFallbackToDirectWhenNotConnected(t *testing.T) {
 // Removed TestFallbackToDirectWhenNoPACURL. Behaviour is fallback to system default when no
 // PACURL; see test case TestFallbackToDefaultWhenNoPACUrl.
 
+func TestProxyFinder_CallsOnPACUpdate(t *testing.T) {
+	js := `function FindProxyForURL(url, host) { return "DIRECT" }`
+	server := httptest.NewServer(http.HandlerFunc(pacjsHandler(js)))
+	defer server.Close()
+	pw := NewPACWrapper(PACData{Port: 1})
+	called := false
+	NewProxyFinder(server.URL, pw, false, func() { called = true })
+	assert.True(t, called, "onPACUpdate should be called on successful PAC download")
+}
+
+func TestProxyFinder_DoesNotCallOnPACUpdateWhenUnreachable(t *testing.T) {
+	pw := NewPACWrapper(PACData{Port: 1})
+	called := false
+	NewProxyFinder("http://pacserver.invalid/nonexistent.pac", pw, false, func() { called = true })
+	assert.False(t, called, "onPACUpdate should not be called when PAC server is unreachable")
+}
+
 func TestSkipBadProxies(t *testing.T) {
 	js := `function FindProxyForURL(url, host) { return "PROXY primary:80; PROXY backup:80" }`
 	server := httptest.NewServer(http.HandlerFunc(pacjsHandler(js)))
 	defer server.Close()
 	pw := NewPACWrapper(PACData{Port: 1})
-	pf := NewProxyFinder(server.URL, pw, false)
+	pf := NewProxyFinder(server.URL, pw, false, nil)
 	req := httptest.NewRequest(http.MethodGet, "https://www.test", nil)
 	ctx := context.WithValue(req.Context(), contextKeyID, 0)
 	req = req.WithContext(ctx)

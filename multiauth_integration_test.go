@@ -405,7 +405,8 @@ func TestConnectViaProxy_FallsThroughOn407(t *testing.T) {
 	require.NoError(t, err)
 	req.Host = "example.com:443"
 
-	conn, err := connectViaProxy(req, proxy.URL(), chain)
+	ph := NewProxyHandler(chain, nil, func(string) {})
+	conn, err := ph.connectViaProxy(req, proxy.URL())
 	require.NoError(t, err)
 	defer conn.Close() //nolint:errcheck //nolint:errcheck
 
@@ -433,7 +434,8 @@ func TestConnectViaProxy_RefusesBasicDowngrade(t *testing.T) {
 	require.NoError(t, err)
 	req.Host = "example.com:443"
 
-	_, err = connectViaProxy(req, proxy.URL(), chain)
+	ph2 := NewProxyHandler(chain, nil, func(string) {})
+	_, err = ph2.connectViaProxy(req, proxy.URL())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errNoMatchingAuthMethod)
 }

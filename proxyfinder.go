@@ -36,16 +36,22 @@ func getProxyFromContext(req *http.Request) (*url.URL, error) {
 }
 
 type ProxyFinder struct {
-	runner      *PACRunner
-	fetcher     *pacFetcher
-	wrapper     *PACWrapper
-	blocked     *blocklist
-	enableSocks bool
+	runner       *PACRunner
+	fetcher      *pacFetcher
+	wrapper      *PACWrapper
+	blocked      *blocklist
+	enableSocks  bool
+	onPACUpdate  func()
 	sync.Mutex
 }
 
-func NewProxyFinder(pacurl string, wrapper *PACWrapper, enableSocks bool) *ProxyFinder {
-	pf := &ProxyFinder{wrapper: wrapper, blocked: newBlocklist(), enableSocks: enableSocks}
+func NewProxyFinder(pacurl string, wrapper *PACWrapper, enableSocks bool, onPACUpdate func()) *ProxyFinder {
+	pf := &ProxyFinder{
+		wrapper:     wrapper,
+		blocked:     newBlocklist(),
+		enableSocks: enableSocks,
+		onPACUpdate: onPACUpdate,
+	}
 	pf.runner = new(PACRunner)
 	pf.fetcher = newPACFetcher(pacurl)
 	pf.checkForUpdates()
@@ -70,6 +76,8 @@ func (pf *ProxyFinder) WrapHandler(next http.Handler) http.Handler {
 }
 
 func (pf *ProxyFinder) checkForUpdates() {
+	notify := func() {}
+	defer func() { notify() }()
 	pf.Lock()
 	defer pf.Unlock()
 	pacjs := pf.fetcher.download()
@@ -85,6 +93,9 @@ func (pf *ProxyFinder) checkForUpdates() {
 		log.Printf("Error running PAC JS: %q", err)
 	} else {
 		pf.wrapper.Wrap(pacjs)
+		if pf.onPACUpdate != nil {
+			notify = pf.onPACUpdate
+		}
 	}
 }
 

@@ -26,6 +26,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -425,4 +426,147 @@ func TestSOCKS5Proxy(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "/testpath", string(body))
+}
+
+// Auth-cache unit tests — covers proxyAuthInfo / authCache behaviour in connectViaProxy.
+
+type authCacheMockProxy struct {
+	mu             sync.Mutex
+	bareConnects   int
+	authedConnects int
+	respondWith407 bool
+}
+
+func (m *authCacheMockProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodConnect {
+		http.Error(w, "only CONNECT supported", http.StatusMethodNotAllowed)
+		return
+	}
+	hasAuth := req.Header.Get("Proxy-Authorization") != ""
+	m.mu.Lock()
+	if hasAuth {
+		m.authedConnects++
+	} else {
+		m.bareConnects++
+	}
+	m.mu.Unlock()
+	if m.respondWith407 || !hasAuth {
+		w.Header().Set("Proxy-Authenticate", "Basic realm=\"proxy\"")
+		w.WriteHeader(http.StatusProxyAuthRequired)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (m *authCacheMockProxy) counts() (bare, authed int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.bareConnects, m.authedConnects
+}
+
+func newAuthCacheTestProxy(t *testing.T, respondWith407 bool) (*httptest.Server, *authCacheMockProxy) {
+	t.Helper()
+	mock := &authCacheMockProxy{respondWith407: respondWith407}
+	srv := httptest.NewServer(mock)
+	t.Cleanup(srv.Close)
+	return srv, mock
+}
+
+
+func makeConnectReq(t *testing.T) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodConnect, "https://target.example.com:443", nil)
+	require.NoError(t, err)
+	req.Host = req.URL.Host
+	return req
+}
+
+func TestConnectAuthCache_PopulatesOnFirst407(t *testing.T) {
+	proxySrv, mock := newAuthCacheTestProxy(t, false)
+	proxyURL, err := url.Parse(proxySrv.URL)
+	require.NoError(t, err)
+	auth := newAuthChain(newBasicAuthenticator("user:pass"))
+	cache := &sync.Map{}
+	req := makeConnectReq(t)
+	ph := ProxyHandler{auth: auth, authCache: cache}
+	conn, err := ph.connectViaProxy(req, proxyURL)
+	require.NoError(t, err)
+	if conn != nil {
+		conn.Close()
+	}
+	bare, _ := mock.counts()
+	assert.Equal(t, 1, bare, "expected exactly one unauthenticated probe")
+	val, ok := cache.Load(proxyURL.Host)
+	require.True(t, ok, "authCache must have an entry for the proxy host after a 407")
+	info, ok := val.(proxyAuthInfo)
+	require.True(t, ok, "cached value must be of type proxyAuthInfo")
+	assert.NotEmpty(t, info.schemes, "cached schemes must not be empty")
+	assert.Contains(t, info.schemes, "basic", "Basic scheme must be recorded in the cache")
+}
+
+func TestConnectAuthCache_SkipsProbeOnCacheHit(t *testing.T) {
+	proxySrv, mock := newAuthCacheTestProxy(t, false)
+	proxyURL, err := url.Parse(proxySrv.URL)
+	require.NoError(t, err)
+	auth := newAuthChain(newBasicAuthenticator("user:pass"))
+	cache := &sync.Map{}
+	cache.Store(proxyURL.Host, proxyAuthInfo{schemes: []string{"basic"}})
+	req := makeConnectReq(t)
+	ph := ProxyHandler{auth: auth, authCache: cache}
+	conn, err := ph.connectViaProxy(req, proxyURL)
+	require.NoError(t, err)
+	if conn != nil {
+		conn.Close()
+	}
+	bare, authed := mock.counts()
+	assert.Equal(t, 0, bare, "cache hit must suppress the unauthenticated probe")
+	assert.Equal(t, 1, authed, "expected exactly one authenticated CONNECT")
+}
+
+func TestConnectAuthCache_EvictsOnStale407(t *testing.T) {
+	proxySrv, _ := newAuthCacheTestProxy(t, true)
+	proxyURL, err := url.Parse(proxySrv.URL)
+	require.NoError(t, err)
+	auth := newAuthChain(newBasicAuthenticator("user:pass"))
+	cache := &sync.Map{}
+	cache.Store(proxyURL.Host, proxyAuthInfo{schemes: []string{"basic"}})
+	req := makeConnectReq(t)
+	ph := ProxyHandler{auth: auth, authCache: cache}
+	_, err = ph.connectViaProxy(req, proxyURL)
+	assert.Error(t, err, "stale 407 must return an error — no self-heal")
+	_, stillCached := cache.Load(proxyURL.Host)
+	assert.False(t, stillCached, "stale cache entry must be evicted on 407")
+}
+
+
+func TestConnectAuthCache_NoProbeOnSecondRequest(t *testing.T) {
+	proxySrv, mock := newAuthCacheTestProxy(t, false)
+	proxyURL, err := url.Parse(proxySrv.URL)
+	require.NoError(t, err)
+	auth := newAuthChain(newBasicAuthenticator("user:pass"))
+	cache := &sync.Map{}
+
+	// Pass 1: cold path — cache is empty, proxy will issue a 407 probe.
+	ph := ProxyHandler{auth: auth, authCache: cache}
+	req1 := makeConnectReq(t)
+	conn1, err := ph.connectViaProxy(req1, proxyURL)
+	require.NoError(t, err, "pass 1 must succeed")
+	require.NotNil(t, conn1, "pass 1 connection must be non-nil")
+	conn1.Close()
+
+	bare, _ := mock.counts()
+	assert.Equal(t, 1, bare, "exactly one bare probe expected after pass 1")
+	_, cached := cache.Load(proxyURL.Host)
+	assert.True(t, cached, "cache must have an entry for the proxy host after pass 1")
+
+	// Pass 2: warm path — cache hit must suppress the bare probe entirely.
+	req2 := makeConnectReq(t)
+	conn2, err := ph.connectViaProxy(req2, proxyURL)
+	require.NoError(t, err, "pass 2 must succeed")
+	require.NotNil(t, conn2, "pass 2 connection must be non-nil")
+	conn2.Close()
+
+	bare, authed := mock.counts()
+	assert.Equal(t, 1, bare, "bare probe count must remain 1 after pass 2 (no new probe)")
+	assert.Equal(t, 2, authed, "both passes must have used authenticated CONNECT")
 }

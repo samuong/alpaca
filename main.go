@@ -200,8 +200,18 @@ func main() {
 
 func createServer(port int, pacurl string, auth *authChain, enableSocks bool) *http.Server {
 	pacWrapper := NewPACWrapper(PACData{Port: port})
-	proxyFinder := NewProxyFinder(pacurl, pacWrapper, enableSocks)
-	proxyHandler := NewProxyHandler(auth, getProxyFromContext, proxyFinder.blockProxy)
+	// Note that proxyHandler and proxyFinder are mutually dependent:
+	// proxyHandler calls proxyFinder.blockProxy(), and proxyFinder calls
+	// proxyHandler.authCache.Clear().
+	var blockProxy func(string)
+	proxyHandler := NewProxyHandler(auth, getProxyFromContext, func(host string) {
+		if blockProxy != nil {
+			blockProxy(host)
+		}
+	})
+	onPACUpdate := proxyHandler.authCache.Clear
+	proxyFinder := NewProxyFinder(pacurl, pacWrapper, enableSocks, onPACUpdate)
+	blockProxy = proxyFinder.blockProxy
 	mux := http.NewServeMux()
 	pacWrapper.SetupHandlers(mux)
 

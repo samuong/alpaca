@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"golang.org/x/net/proxy"
 )
@@ -133,7 +134,7 @@ func isToken(s string) bool {
 
 // parseProxyAuthenticateSchemes returns the deduplicated, lower-cased
 // scheme names from a 407 response's Proxy-Authenticate header(s),
-// preserving the order in which they appeared. RFC 7235 §4.3 allows
+// preserving the order in which they appeared. RFC 9110 §11.3 allows
 // either multiple Proxy-Authenticate header fields OR a single header
 // field containing a comma-separated list of challenges (RFC 7230 list
 // extension), so we honour both. The portion after the scheme token
@@ -157,11 +158,11 @@ func parseProxyAuthenticateSchemes(header http.Header) []string {
 
 // splitChallengeNames extracts the scheme names from a single
 // Proxy-Authenticate header field value that may contain multiple
-// challenges joined by commas (RFC 7235 §4.3 + RFC 7230 §7 list
+// challenges joined by commas (RFC 9110 §11.3 + RFC 7230 §7 list
 // extension). It walks the value byte-by-byte so that commas inside
 // quoted-strings are not treated as challenge separators.
 //
-// RFC 7235's challenge grammar is:
+// RFC 9110's challenge grammar is:
 //
 //	challenge = auth-scheme [ 1*SP ( token68 /
 //	    [ ( "," / auth-param ) *( OWS "," [ OWS auth-param ] ) ] ) ]
@@ -178,7 +179,7 @@ func parseProxyAuthenticateSchemes(header http.Header) []string {
 // will cause `bar` to be misclassified as a scheme name. This is benign
 // because no real authenticator's scheme() returns `bar`, so the picker
 // silently ignores it. We accept this rather than implementing full
-// RFC 7235 grammar parsing for the tail of unparseable proxies.
+// RFC 9110 grammar parsing for the tail of unparseable proxies.
 //
 // The returned strings are the raw auth-scheme tokens; the caller
 // validates them via isToken.
@@ -220,17 +221,23 @@ func splitChallengeNames(value string) []string {
 	return names
 }
 
+type proxyAuthInfo struct {
+	// schemes are lower-cased, matching parseProxyAuthenticateSchemes output.
+	schemes []string
+}
+
 type ProxyHandler struct {
 	transport *http.Transport
 	auth      *authChain
 	block     func(string)
+	authCache *sync.Map
 }
 
 type proxyFunc func(*http.Request) (*url.URL, error)
 
 func NewProxyHandler(auth *authChain, proxy proxyFunc, block func(string)) ProxyHandler {
 	tr := &http.Transport{Proxy: proxy, TLSClientConfig: tlsClientConfig}
-	return ProxyHandler{tr, auth, block}
+	return ProxyHandler{tr, auth, block, &sync.Map{}}
 }
 
 func (ph ProxyHandler) WrapHandler(next http.Handler) http.Handler {
@@ -270,7 +277,7 @@ func (ph ProxyHandler) handleConnect(w http.ResponseWriter, req *http.Request) {
 	if proxyURL == nil {
 		server, err = connectDirect(req)
 	} else {
-		server, err = connectViaProxy(req, proxyURL, ph.auth)
+		server, err = ph.connectViaProxy(req, proxyURL)
 		var oe *net.OpError
 		if errors.As(err, &oe) && oe.Op == "proxyconnect" {
 			log.Printf("[%d] Temporarily blocking proxy: %q", id, proxyURL.Host)
@@ -345,7 +352,40 @@ func connectDirect(req *http.Request) (net.Conn, error) {
 	return server, err
 }
 
-func connectViaProxy(req *http.Request, proxyURL *url.URL, auth *authChain) (net.Conn, error) {
+// coldProbe dials proxyURL on tr, sends an unauthenticated CONNECT, and handles
+// the 407 response by caching the advertised schemes and retrying with auth.
+// The caller is responsible for deferring tr.Close().
+func coldProbe(req *http.Request, proxyURL *url.URL, auth *authChain,
+	tr *transport, authCache *sync.Map) (*http.Response, error) {
+	id := req.Context().Value(contextKeyID)
+	if err := tr.dial(proxyURL); err != nil {
+		log.Printf("[%d] Error dialling proxy %s: %v", id, proxyURL.Host, err)
+		return nil, err
+	}
+	req.Header.Del("Proxy-Authorization")
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		log.Printf("[%d] Error reading CONNECT response: %v", id, err)
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusProxyAuthRequired || auth == nil {
+		return resp, nil
+	}
+	log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
+	schemes := parseProxyAuthenticateSchemes(resp.Header)
+	_ = resp.Body.Close()
+	authResp, err := retryConnectWithAuth(req, proxyURL, auth, schemes, tr)
+	if err != nil {
+		return nil, err
+	}
+	if authResp.StatusCode != http.StatusProxyAuthRequired {
+		authCache.Store(proxyURL.Host, proxyAuthInfo{schemes: schemes})
+	}
+	log.Printf("[%d] Got %q response", id, authResp.Status)
+	return authResp, nil
+}
+
+func (ph *ProxyHandler) connectViaProxy(req *http.Request, proxyURL *url.URL) (net.Conn, error) {
 	id := req.Context().Value(contextKeyID)
 
 	// SOCKS5 short-circuit: SOCKS5 has its own authentication model
@@ -377,26 +417,27 @@ func connectViaProxy(req *http.Request, proxyURL *url.URL, auth *authChain) (net
 
 	var tr transport
 	defer tr.Close() //nolint:errcheck
-	if err := tr.dial(proxyURL); err != nil {
-		log.Printf("[%d] Error dialling proxy %s: %v", id, proxyURL.Host, err)
-		return nil, err
-	}
-	resp, err := tr.RoundTrip(req)
-	if err != nil {
-		log.Printf("[%d] Error reading CONNECT response: %v", id, err)
-		return nil, err
-	}
-	if resp.StatusCode == http.StatusProxyAuthRequired && auth != nil {
-		log.Printf("[%d] Got %q response, retrying with auth", id, resp.Status)
-		schemes := parseProxyAuthenticateSchemes(resp.Header)
-		_ = resp.Body.Close()
-		// resp is now stale; the retry helper returns a fresh one.
-		authResp, err := retryConnectWithAuth(req, proxyURL, auth, schemes, &tr)
+	var resp *http.Response
+	if cached, ok := ph.authCache.Load(proxyURL.Host); ok && ph.auth != nil {
+		// Cache hit — skip unauthenticated probe.
+		info := cached.(proxyAuthInfo)
+		authResp, err := retryConnectWithAuth(req, proxyURL, ph.auth, info.schemes, &tr)
 		if err != nil {
 			return nil, err
 		}
+		if authResp.StatusCode == http.StatusProxyAuthRequired {
+			// Stale or invalid cache entry — evict and return error.
+			ph.authCache.Delete(proxyURL.Host)
+		}
 		log.Printf("[%d] Got %q response", id, authResp.Status)
 		resp = authResp
+	} else {
+		// Cold probe — no cached entry; populate cache on first 407.
+		var err error
+		resp, err = coldProbe(req, proxyURL, ph.auth, &tr, ph.authCache)
+		if err != nil {
+			return nil, err
+		}
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode == http.StatusProxyAuthRequired {
