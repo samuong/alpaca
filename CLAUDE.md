@@ -7,7 +7,7 @@ Alpaca is a local HTTP proxy for command-line tools written in Go. It supports:
 - Proxy Auto-Configuration (PAC) files
 - NTLM authentication
 - Basic HTTP authentication
-- Kerberos/Negotiate authentication (macOS only)
+- Kerberos/Negotiate authentication via GSS-API
 - System keyring integration (macOS, Windows, Linux/GNOME)
 - Automatic network switching (bypasses unreachable proxies)
 
@@ -43,7 +43,7 @@ alpaca/
 ├── authenticator.go       # NTLM authentication
 ├── basicauth.go           # Basic HTTP proxy authentication
 ├── multiauth.go           # authChain: picks authenticators for a 407 response
-├── kerberos*.go           # Kerberos/Negotiate auth (macOS-specific)
+├── kerberos*.go           # Kerberos/Negotiate auth (GSS-API backend + stub)
 ├── credentials.go         # Credential sourcing (terminal, env, keyring)
 ├── keyring*.go            # System keyring integration per platform
 ├── pacfinder*.go          # PAC URL discovery (platform-specific)
@@ -120,6 +120,7 @@ applicability rules.
 
 - **Go 1.25.0+**
 - **CGO_ENABLED=1** (required for builds and tests)
+- **libkrb5-dev** on Linux (MIT GSS-API headers)
 
 ### Build
 
@@ -215,7 +216,7 @@ Triggered on tags matching `v*`. Creates a GitHub release and uploads platform-s
 
 Files with platform build tags:
 
-- `*_darwin.go` — macOS-specific (Keychain, Kerberos, PAC via SCDynamicStore)
+- `*_darwin.go` — macOS-specific (Keychain, PAC via SCDynamicStore)
 - `*_unix.go` — Unix/Linux-specific (PAC discovery)
 - `*_windows.go` — Windows-specific (PAC discovery, credential management)
 - `*_other.go` — Fallback stubs for unsupported platforms

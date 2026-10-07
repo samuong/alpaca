@@ -6,7 +6,7 @@
 
 Alpaca is a local HTTP proxy for command-line tools. It supports proxy
 auto-configuration (PAC) files, NTLM authentication, HTTP Basic
-authentication, and (on macOS) Kerberos/Negotiate (SPNEGO) authentication.
+authentication, and Kerberos/Negotiate (SPNEGO) authentication.
 ![alt text](assets/alpaca-banner.png)
 
 ## Install using Homebrew
@@ -33,7 +33,9 @@ $ go install github.com/samuong/alpaca/v2@latest
 ## Build from source
 
 If you'd like to build Alpaca from source, you'll need [Go](https://go.dev/)
-1.25.0 or later. CGO must be enabled:
+1.25.0 or later. CGO must be enabled, and on Linux the MIT Kerberos
+development headers are required (`libkrb5-dev` on Debian/Ubuntu,
+`krb5-devel` on Fedora/RHEL):
 
 ```sh
 $ CGO_ENABLED=1 go build -v .
@@ -61,12 +63,11 @@ If the proxy server requires valid authentication credentials, you can provide t
 
 - HTTP Basic authentication, if `BASIC_CREDENTIALS=login:password` is set in
   the environment;
-- Kerberos / Negotiate, **automatically on macOS** when a ticket from Apple SSO
-  / Ticket Viewer / `kinit` is available — no flag required (pass
-  `--no-kerberos` to opt out). Tickets that arrive *after* alpaca starts are
+- Kerberos / Negotiate, **automatically on macOS and Linux** when a ticket
+  (e.g. from Apple SSO, `kinit` or SSSD) is available — no flag required (pass
+  `-no-kerberos` to opt out). Tickets that arrive *after* alpaca starts are
   picked up automatically: alpaca re-checks credential availability on every
-  407 response, so a user who launches alpaca before signing in to Apple SSO
-  does not need to restart it once the ticket lands;
+  407 response, so there is no need to restart it once the ticket lands;
 - NTLM via the shell prompt, if `-d` is passed;
 - NTLM via the shell environment, if `NTLM_CREDENTIALS` is set;
 - the system keyring (macOS, Windows and Linux/GNOME supported), if none of
@@ -187,24 +188,13 @@ When auth misbehaves, the first thing to check is alpaca's own log:
 
 ### Platform support for Kerberos
 
-Kerberos / Negotiate authentication in this build is **macOS only**. It uses
-Apple's `GSS.framework` to consume the system Kerberos credential cache —
-the same one populated by Apple SSO, Ticket Viewer, and `kinit` — so no
-extra configuration is required when a ticket is already present.
+Kerberos / Negotiate authentication uses GSS-API: Apple's `GSS.framework`
+on macOS and MIT Kerberos (`libgssapi_krb5`) on Linux. Alpaca uses the
+default credential cache — the one populated by Apple SSO, Ticket Viewer,
+`kinit` or SSSD, and selected by `KRB5CCNAME` and `krb5.conf` on Linux —
+so no extra configuration is required when a ticket is already present.
 
-Windows and Linux Kerberos handling is intentionally out of scope for this
-change; on those platforms `newNegotiateAuthenticator` returns `nil` and
-Negotiate is transparently absent from the auth chain. Adding support on
-either platform is a follow-up:
-
-- **Windows** has system-wide Kerberos via SSPI (`Negotiate` package) and
-  could be implemented either via cgo against `security.h` or in pure Go
-  via `github.com/alexbrainman/sspi`.
-- **Linux** has no system-wide credential store but `github.com/jcmturner/gokrb5`
-  can read the per-user `krb5cc_$UID` cache produced by `kinit`.
-
-Both are clean drop-in additions next to `kerberos_darwin.go`, sharing
-the same `proxyAuthenticator` interface.
+On other platforms Negotiate is absent from the auth chain.
 
 ### Shell Prompt
 
@@ -270,7 +260,7 @@ can set this manually using the `-C` flag.
 | `-d` | (none) | Domain of the proxy account (for NTLM auth) |
 | `-u` | current user | Username for proxy auth (NTLM) |
 | `-H` | `false` | Print hashed NTLM credentials and exit |
-| `-no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection (macOS only) |
+| `-no-kerberos` | `false` | Disable Kerberos / Negotiate auto-detection |
 | `-enable-socks` | `false` | Allow SOCKS5 proxies from PAC files. SOCKS5 has its own auth model and bypasses alpaca's HTTP authentication chain (and therefore the proxy-auth allowlist). |
 | `-q` | `false` | Quiet mode, suppress all log output. Also suppresses the proxy-auth-allowlist startup nudge. |
 | `-version` | `false` | Print version and exit |

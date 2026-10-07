@@ -61,8 +61,7 @@ func main() {
 	domain := flag.String("d", "", "domain of the proxy account (for NTLM auth)")
 	username := flag.String("u", whoAmI(), "username for proxy auth (NTLM)")
 	printHash := flag.Bool("H", false, "print hashed NTLM credentials for non-interactive use")
-	noKerberos := flag.Bool("no-kerberos", false,
-		"disable Kerberos/Negotiate auto-detection (macOS only)")
+	noKerberos := flag.Bool("no-kerberos", false, "disable Kerberos/Negotiate auto-detection")
 	quiet := flag.Bool("q", false, "quiet mode, suppress all log output")
 	version := flag.Bool("version", false, "print version number")
 	enableSocks := flag.Bool("enable-socks", false, "allow SOCKS5 proxies from PAC files")
@@ -130,11 +129,6 @@ func main() {
 
 	// Build auth chain: Negotiate → NTLM → Basic (matches Chrome's hierarchy;
 	// Basic has the lowest security score because it sends credentials unencrypted).
-	//
-	// Kerberos/Negotiate is auto-detected on macOS: if a valid ticket is
-	// present at startup (or appears within -w seconds), Negotiate is
-	// added to the chain. No flag needed for the common "Apple SSO is
-	// signed in" case — alpaca behaves like the keyring source.
 	var methods []proxyAuthenticator
 	if !*noKerberos {
 		if neg := newNegotiateAuthenticator(); neg != nil {

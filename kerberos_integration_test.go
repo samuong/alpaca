@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build e2e && darwin
+//go:build e2e && (darwin || linux)
 
 // End-to-end test fixture for alpaca's multi-method proxy authentication.
 //
@@ -21,12 +21,6 @@
 // exercises the full alpaca pipeline against it: PAC-less direct upstream,
 // the multi-auth chain, and the security invariants (downgrade refusal,
 // proxy-auth allowlist enforcement, ticket re-check).
-//
-// Build tag is "e2e && darwin": the test exercises alpaca's macOS
-// GSS.framework Negotiate path, which is the only Kerberos backend
-// implemented in this PR. On other platforms newNegotiateAuthenticator
-// returns nil so there's nothing to exercise; the build constraint
-// keeps `go test -tags=e2e ./...` working transparently elsewhere.
 //
 // Run with:
 //
@@ -307,7 +301,7 @@ func (fx *e2eFixture) kinit(t *testing.T) {
 
 [realms]
     %s = {
-        kdc = tcp/%s
+        kdc = %s
         admin_server = %s
     }
 

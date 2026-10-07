@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - run: sudo apt-get update && sudo apt-get install -y libkrb5-dev
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
 
@@ -46,6 +47,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
+
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libkrb5-dev
 
       - run: go test ./...
         env:
@@ -81,6 +85,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
+
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libkrb5-dev
 
       - if: matrix.target.goos == 'darwin' && matrix.target.goarch == 'arm64'
         run: |
